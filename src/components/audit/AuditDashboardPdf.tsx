@@ -203,16 +203,44 @@ export function exportAuditDashboardPdf(records: AuditRecord[]) {
     doc.setFontSize(9);
     doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")} – ${records.length.toLocaleString("pt-BR")} registros`, 14, 22);
 
-    // KPI computation
-    const uniqueDates = new Set(records.map((r) => r.date));
-    const uniqueProfessionals = new Set(records.map((r) => r.professional).filter(Boolean));
-    const uniqueUnits = new Set(records.map((r) => r.unit).filter(Boolean));
-    const indicatorCounts: Record<string, number> = {};
-    records.forEach((r) => { indicatorCounts[r.indicator] = (indicatorCounts[r.indicator] || 0) + 1; });
-    const topIndicator = Object.entries(indicatorCounts).sort((a, b) => b[1] - a[1])[0];
+    // KPI computation - Single pass
+    const stats = {
+      uniqueDates: new Set<string>(),
+      uniqueProfessionals: new Set<string>(),
+      uniqueUnits: new Set<string>(),
+      indicatorMap: {} as Record<string, number>,
+      unitMap: {} as Record<string, number>,
+      sourceMap: {} as Record<string, number>,
+      profMap: {} as Record<string, number>,
+      dailyMap: {} as Record<string, number>
+    };
+
+    records.forEach((r) => {
+      if (r.date) {
+        stats.uniqueDates.add(r.date);
+        stats.dailyMap[r.date] = (stats.dailyMap[r.date] || 0) + 1;
+      }
+      if (r.professional) {
+        stats.uniqueProfessionals.add(r.professional);
+        stats.profMap[r.professional] = (stats.profMap[r.professional] || 0) + 1;
+      }
+      if (r.unit) {
+        stats.uniqueUnits.add(r.unit);
+        stats.unitMap[r.unit] = (stats.unitMap[r.unit] || 0) + 1;
+      }
+      if (r.indicator) {
+        stats.indicatorMap[r.indicator] = (stats.indicatorMap[r.indicator] || 0) + 1;
+      }
+      if (r.source) {
+        stats.sourceMap[r.source] = (stats.sourceMap[r.source] || 0) + 1;
+      }
+    });
+
+    const indicatorEntries = Object.entries(stats.indicatorMap).sort((a, b) => b[1] - a[1]);
+    const topIndicator = indicatorEntries[0];
     const allIndicators = ["C1", "C2", "C3", "C4", "C5", "C6", "C7"];
     const coverage = allIndicators.filter((i) =>
-      Object.keys(indicatorCounts).some((k) => k.toUpperCase().startsWith(i))
+      Object.keys(stats.indicatorMap).some((k) => k.toUpperCase().startsWith(i))
     ).length;
 
     autoTable(doc, {
@@ -220,9 +248,9 @@ export function exportAuditDashboardPdf(records: AuditRecord[]) {
       head: [["KPI", "Valor"]],
       body: [
         ["Total de Procedimentos", records.length.toLocaleString("pt-BR")],
-        ["Média por Dia", uniqueDates.size ? Math.round(records.length / uniqueDates.size).toLocaleString("pt-BR") : "0"],
-        ["Profissionais Únicos", uniqueProfessionals.size.toLocaleString("pt-BR")],
-        ["Unidades Únicas", uniqueUnits.size.toLocaleString("pt-BR")],
+        ["Média por Dia", stats.uniqueDates.size ? Math.round(records.length / stats.uniqueDates.size).toLocaleString("pt-BR") : "0"],
+        ["Profissionais Únicos", stats.uniqueProfessionals.size.toLocaleString("pt-BR")],
+        ["Unidades Únicas", stats.uniqueUnits.size.toLocaleString("pt-BR")],
         ["Top Indicador", topIndicator ? `${topIndicator[0]} (${topIndicator[1]})` : "-"],
         ["Cobertura de Indicadores", `${coverage}/7 (${Math.round((coverage / 7) * 100)}%)`],
       ],
@@ -234,23 +262,15 @@ export function exportAuditDashboardPdf(records: AuditRecord[]) {
     // ============ PAGE 2: By Indicator + By Source ============
     doc.addPage();
 
-    const byIndicator = Object.entries(indicatorCounts)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, value]) => ({ name, value }));
-
+    const byIndicator = indicatorEntries.map(([name, value]) => ({ name, value }));
     const endY1 = drawHorizontalBarChart(doc, byIndicator, 14, 18, pageW / 2 - 20, "Procedimentos por Indicador", [59, 130, 246]);
 
     // By Source - Pie
-    const sourceMap: Record<string, number> = {};
-    records.forEach((r) => { sourceMap[r.source] = (sourceMap[r.source] || 0) + 1; });
-    const bySource = Object.entries(sourceMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-
+    const bySource = Object.entries(stats.sourceMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
     drawPieChart(doc, bySource, pageW / 2 + 50, 55, 28, "Distribuição por Tipo");
 
     // Daily Volume
-    const dailyMap: Record<string, number> = {};
-    records.forEach((r) => { if (r.date) dailyMap[r.date] = (dailyMap[r.date] || 0) + 1; });
-    const dailyVolume = Object.entries(dailyMap)
+    const dailyVolume = Object.entries(stats.dailyMap)
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, value]) => {
         const parts = date.split("-");
@@ -263,16 +283,10 @@ export function exportAuditDashboardPdf(records: AuditRecord[]) {
     // ============ PAGE 3: Units + Professionals Charts ============
     doc.addPage();
 
-    const unitMap: Record<string, number> = {};
-    records.forEach((r) => { if (r.unit) unitMap[r.unit] = (unitMap[r.unit] || 0) + 1; });
-    const byUnit = Object.entries(unitMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, value]) => ({ name, value }));
-
+    const byUnit = Object.entries(stats.unitMap).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, value]) => ({ name, value }));
     const unitsEndY = drawHorizontalBarChart(doc, byUnit, 14, 18, pageW - 28, "Top 10 Unidades", [16, 185, 129]);
 
-    const profMap: Record<string, number> = {};
-    records.forEach((r) => { if (r.professional) profMap[r.professional] = (profMap[r.professional] || 0) + 1; });
-    const byProf = Object.entries(profMap).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, value]) => ({ name, value }));
-
+    const byProf = Object.entries(stats.profMap).sort((a, b) => b[1] - a[1]).slice(0, 15).map(([name, value]) => ({ name, value }));
     const profStartY = unitsEndY + 5;
     // Check if we need a new page
     if (profStartY + byProf.length * 11 > 190) {
@@ -292,7 +306,7 @@ export function exportAuditDashboardPdf(records: AuditRecord[]) {
     autoTable(doc, {
       startY: currentY + 4,
       head: [["Indicador", "Quantidade", "% do Total"]],
-      body: Object.entries(indicatorCounts).sort((a, b) => b[1] - a[1]).map(([name, count]) => [
+      body: indicatorEntries.map(([name, count]) => [
         name, count.toLocaleString("pt-BR"), `${((count / records.length) * 100).toFixed(1)}%`,
       ]),
       styles: { fontSize: 8, cellPadding: 2 },
@@ -321,7 +335,7 @@ export function exportAuditDashboardPdf(records: AuditRecord[]) {
     autoTable(doc, {
       startY: currentY + 4,
       head: [["Profissional", "Quantidade", "% do Total"]],
-      body: Object.entries(profMap).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([name, count]) => [
+      body: Object.entries(stats.profMap).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([name, count]) => [
         name, count.toLocaleString("pt-BR"), `${((count / records.length) * 100).toFixed(1)}%`,
       ]),
       styles: { fontSize: 8, cellPadding: 2 },

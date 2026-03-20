@@ -67,6 +67,13 @@ export const AuditoriaSection = () => {
   const [professionalFilter, setProfessionalFilter] = useState("all");
   const [indicatorFilter, setIndicatorFilter] = useState("all");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   const fetchData = useCallback(async (payload: Record<string, unknown>) => {
     const { data, error } = await supabase.functions.invoke("audit-procedures", { body: payload });
@@ -146,12 +153,12 @@ export const AuditoriaSection = () => {
     let records = result.records;
     if (unitFilter !== "all") records = records.filter((r) => r.unit === unitFilter);
     if (professionalFilter !== "all") records = records.filter((r) => r.professional === professionalFilter);
-    if (search.trim()) {
-      const term = search.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    if (debouncedSearch.trim()) {
+      const term = debouncedSearch.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
       records = records.filter((r) => r.searchString?.includes(term));
     }
     return records;
-  }, [result, unitFilter, professionalFilter, search]);
+  }, [result, unitFilter, professionalFilter, debouncedSearch]);
 
   const unitOptions = result?.filters.units ?? [];
   const professionalOptions = result?.filters.professionals ?? [];
@@ -167,46 +174,78 @@ export const AuditoriaSection = () => {
       Paciente: r.patient || "-",
     }));
 
-  const handleExportExcel = useCallback(() => {
+  const handleExportExcel = useCallback(async () => {
     if (!filteredRecords.length) { toast.error("Nenhum registro para exportar."); return; }
-    const ws = XLSX.utils.json_to_sheet(toExportRows(filteredRecords));
-    ws["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 35 }, { wch: 18 }, { wch: 14 }, { wch: 25 }, { wch: 30 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
-    XLSX.writeFile(wb, `auditoria_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    toast.success("Excel exportado com sucesso.");
+    setIsExporting(true);
+    // Use setTimeout to allow UI to update before heavy computation
+    setTimeout(() => {
+      try {
+        const ws = XLSX.utils.json_to_sheet(toExportRows(filteredRecords));
+        ws["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 35 }, { wch: 18 }, { wch: 14 }, { wch: 25 }, { wch: 30 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+        XLSX.writeFile(wb, `auditoria_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        toast.success("Excel exportado com sucesso.");
+      } catch (err) {
+        toast.error("Erro ao exportar Excel.");
+      } finally {
+        setIsExporting(false);
+      }
+    }, 100);
   }, [filteredRecords]);
 
   const handleExportPdf = useCallback(() => {
     if (!filteredRecords.length) { toast.error("Nenhum registro para exportar."); return; }
-    const doc = new jsPDF({ orientation: "landscape" });
-    doc.setFontSize(14);
-    doc.text("Auditoria de Procedimentos", 14, 15);
-    doc.setFontSize(9);
-    doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")} – ${filteredRecords.length} registros`, 14, 22);
-    autoTable(doc, {
-      startY: 28,
-      head: [["Data", "Profissional", "Procedimento", "Indicador", "Tipo", "Unidade", "Paciente"]],
-      body: filteredRecords.slice(0, 500).map((r) => [
-        formatDateBR(r.date), r.professional || "Não informado", r.procedure, r.indicator, r.source, r.unit || "-", r.patient || "-",
-      ]),
-      styles: { fontSize: 7, cellPadding: 2 },
-      headStyles: { fillColor: [30, 30, 30] },
-    });
-    doc.save(`auditoria_${new Date().toISOString().slice(0, 10)}.pdf`);
-    toast.success("PDF exportado com sucesso.");
+    setIsExporting(true);
+    setTimeout(() => {
+      try {
+        const doc = new jsPDF({ orientation: "landscape" });
+        doc.setFontSize(14);
+        doc.text("Auditoria de Procedimentos", 14, 15);
+        doc.setFontSize(9);
+        doc.text(`Gerado em ${new Date().toLocaleDateString("pt-BR")} – ${filteredRecords.length} registros`, 14, 22);
+        autoTable(doc, {
+          startY: 28,
+          head: [["Data", "Profissional", "Procedimento", "Indicador", "Tipo", "Unidade", "Paciente"]],
+          body: filteredRecords.slice(0, 2000).map((r) => [
+            formatDateBR(r.date), r.professional || "Não informado", r.procedure, r.indicator, r.source, r.unit || "-", r.patient || "-",
+          ]),
+          styles: { fontSize: 7, cellPadding: 2 },
+          headStyles: { fillColor: [30, 30, 30] },
+        });
+        if (filteredRecords.length > 2000) {
+          doc.setFontSize(8);
+          doc.text(`Nota: Exibindo apenas os primeiros 2000 registros de ${filteredRecords.length} no PDF para evitar lentidão.`, 14, (doc as any).lastAutoTable.finalY + 10);
+        }
+        doc.save(`auditoria_${new Date().toISOString().slice(0, 10)}.pdf`);
+        toast.success("PDF exportado com sucesso.");
+      } catch (err) {
+        toast.error("Erro ao gerar PDF.");
+      } finally {
+        setIsExporting(false);
+      }
+    }, 100);
   }, [filteredRecords]);
 
   const handleExportDashboardPdf = useCallback(() => {
     if (!filteredRecords.length) { toast.error("Nenhum registro para exportar."); return; }
-    exportAuditDashboardPdf(filteredRecords);
-    toast.success("PDF do Dashboard exportado com sucesso.");
+    setIsExporting(true);
+    setTimeout(() => {
+      try {
+        exportAuditDashboardPdf(filteredRecords);
+        toast.success("PDF do Dashboard exportado com sucesso.");
+      } catch (err) {
+        toast.error("Erro ao gerar PDF do Dashboard.");
+      } finally {
+        setIsExporting(false);
+      }
+    }, 100);
   }, [filteredRecords]);
 
   const handleQuickExport = useCallback(async () => {
     setQuickExporting(true);
     try {
-      const payload: Record<string, unknown> = { limit: 5000 };
+      const payload: Record<string, unknown> = { limit: 10000 };
       if (dateFrom) payload.dateFrom = dateFrom;
       if (dateTo) payload.dateTo = dateTo;
       if (indicatorFilter !== "all") payload.indicator = indicatorFilter;
@@ -303,14 +342,14 @@ export const AuditoriaSection = () => {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={handleExportExcel} variant="outline" className="rounded-full" size="sm">
-                  <FileSpreadsheet className="h-4 w-4" />Excel
+                <Button onClick={handleExportExcel} disabled={isExporting} variant="outline" className="rounded-full" size="sm">
+                  {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />} Excel
                 </Button>
-                <Button onClick={handleExportPdf} variant="outline" className="rounded-full" size="sm">
-                  <FileDown className="h-4 w-4" />PDF
+                <Button onClick={handleExportPdf} disabled={isExporting} variant="outline" className="rounded-full" size="sm">
+                  {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />} PDF
                 </Button>
-                <Button onClick={handleExportDashboardPdf} variant="outline" className="rounded-full" size="sm">
-                  <BarChart3 className="h-4 w-4" />PDF Dashboard
+                <Button onClick={handleExportDashboardPdf} disabled={isExporting} variant="outline" className="rounded-full" size="sm">
+                  {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />} PDF Dashboard
                 </Button>
               </div>
             </div>

@@ -55,7 +55,9 @@ const Index = () => {
   } = useReferenceUpload();
 
   const [activeSection, setActiveSection] = useState<SectionKey>(() => {
-    return getSectionFromHash(window.location.hash);
+    const hashSection = getSectionFromHash(window.location.hash);
+    if (isAdmin || hasAccess(hashSection)) return hashSection;
+    return visibleMenu[0]?.section || "painel";
   });
   
   const [initialSearchFilter, setInitialSearchFilter] = useState("");
@@ -69,14 +71,23 @@ const Index = () => {
 
   useEffect(() => {
     const syncSectionWithHash = () => {
-      setActiveSection(getSectionFromHash(window.location.hash));
+      const hashSection = getSectionFromHash(window.location.hash);
+      if (isAdmin || hasAccess(hashSection)) {
+        setActiveSection(hashSection);
+      } else if (visibleMenu.length > 0) {
+        // Redirect to first allowed section if unauthorized
+        const firstSection = visibleMenu[0].section;
+        window.location.hash = `#${firstSection}`;
+        setActiveSection(firstSection);
+      }
     };
     syncSectionWithHash();
     window.addEventListener("hashchange", syncSectionWithHash);
     return () => window.removeEventListener("hashchange", syncSectionWithHash);
-  }, []);
+  }, [isAdmin, hasAccess, visibleMenu]);
 
   const handleSectionChange = (section: SectionKey, search?: string) => {
+    if (!isAdmin && !hasAccess(section)) return;
     setInitialSearchFilter(search || "");
     const nextHash = `#${section}`;
     if (window.location.hash === nextHash) {
@@ -125,6 +136,15 @@ const Index = () => {
   });
 
   const renderSection = () => {
+    // Security check: if not authorized for this section, show nothing
+    if (!isAdmin && !hasAccess(activeSection)) {
+      return (
+        <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-border bg-muted/30 py-16">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        </div>
+      );
+    }
+
     switch (activeSection) {
       case "conexao": return <ConnectionSection />;
       case "upload":
@@ -225,7 +245,7 @@ const Index = () => {
             />
           </div>
         );
-      default: return <ConnectionSection />;
+      default: return null;
     }
   };
 

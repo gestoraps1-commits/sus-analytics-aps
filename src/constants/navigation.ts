@@ -153,5 +153,5 @@ export const getSectionFromHash = (hash: string): SectionKey => {
     perfis: "perfis",
     "gestao-usuarios": "gestao-usuarios",
   };
-  return map[normalizedHash] || "conexao";
+  return map[normalizedHash] || "painel";
 };

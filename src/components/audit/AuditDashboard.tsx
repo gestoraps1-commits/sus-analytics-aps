@@ -31,63 +31,50 @@ interface Props {
   roleMap?: Record<string, string>;
 }
 
-export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
-  const kpis = useMemo(() => {
+export function AuditDashboard({ records, roleMap = {} }: Props) {
+  const data = useMemo(() => {
     if (!records.length) return null;
-    const uniqueDates = new Set(records.map((r) => r.date));
-    const uniqueProfessionals = new Set(records.map((r) => r.professional).filter(Boolean));
-    const uniqueUnits = new Set(records.map((r) => r.unit).filter(Boolean));
-    const indicatorCounts: Record<string, number> = {};
+
+    const stats = {
+      uniqueDates: new Set<string>(),
+      uniqueProfessionals: new Set<string>(),
+      uniqueUnits: new Set<string>(),
+      indicatorMap: {} as Record<string, number>,
+      unitMap: {} as Record<string, number>,
+      dailyMap: {} as Record<string, number>,
+      sourceMap: {} as Record<string, number>,
+      professionalMap: {} as Record<string, number>,
+    };
+
     records.forEach((r) => {
-      indicatorCounts[r.indicator] = (indicatorCounts[r.indicator] || 0) + 1;
+      if (r.date) {
+        stats.uniqueDates.add(r.date);
+        stats.dailyMap[r.date] = (stats.dailyMap[r.date] || 0) + 1;
+      }
+      if (r.professional) {
+        stats.uniqueProfessionals.add(r.professional);
+        stats.professionalMap[r.professional] = (stats.professionalMap[r.professional] || 0) + 1;
+      }
+      if (r.unit) {
+        stats.uniqueUnits.add(r.unit);
+        stats.unitMap[r.unit] = (stats.unitMap[r.unit] || 0) + 1;
+      }
+      if (r.indicator) {
+        stats.indicatorMap[r.indicator] = (stats.indicatorMap[r.indicator] || 0) + 1;
+      }
+      if (r.source) {
+        stats.sourceMap[r.source] = (stats.sourceMap[r.source] || 0) + 1;
+      }
     });
-    const topIndicator = Object.entries(indicatorCounts).sort((a, b) => b[1] - a[1])[0];
+
+    const indicatorEntries = Object.entries(stats.indicatorMap).sort((a, b) => b[1] - a[1]);
+    const topIndicator = indicatorEntries[0];
     const allIndicators = ["C1", "C2", "C3", "C4", "C5", "C6", "C7"];
     const coverage = allIndicators.filter((i) =>
-      Object.keys(indicatorCounts).some((k) => k.toUpperCase().startsWith(i))
+      Object.keys(stats.indicatorMap).some((k) => k.toUpperCase().startsWith(i))
     ).length;
 
-    return {
-      total: records.length,
-      avgPerDay: uniqueDates.size ? Math.round(records.length / uniqueDates.size) : 0,
-      professionals: uniqueProfessionals.size,
-      units: uniqueUnits.size,
-      topIndicator: topIndicator ? topIndicator[0] : "-",
-      coverage: `${coverage}/7 (${Math.round((coverage / 7) * 100)}%)`,
-    };
-  }, [records]);
-
-  const byIndicator = useMemo(() => {
-    const map: Record<string, number> = {};
-    records.forEach((r) => { map[r.indicator] = (map[r.indicator] || 0) + 1; });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [records]);
-
-  const byUnit = useMemo(() => {
-    const map: Record<string, number> = {};
-    records.forEach((r) => { if (r.unit) map[r.unit] = (map[r.unit] || 0) + 1; });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([name, value]) => ({ name, value }));
-  }, [records]);
-
-  const dailyVolume = useMemo(() => {
-    const map: Record<string, number> = {};
-    records.forEach((r) => { if (r.date) map[r.date] = (map[r.date] || 0) + 1; });
-    return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0])).map(([date, value]) => {
-      const [y, m, d] = date.split("-");
-      return { name: `${d}/${m}`, value };
-    });
-  }, [records]);
-
-  const bySource = useMemo(() => {
-    const map: Record<string, number> = {};
-    records.forEach((r) => { map[r.source] = (map[r.source] || 0) + 1; });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
-  }, [records]);
-
-  const byProfessional = useMemo(() => {
-    const map: Record<string, number> = {};
-    records.forEach((r) => { if (r.professional) map[r.professional] = (map[r.professional] || 0) + 1; });
-    return Object.entries(map)
+    const byProfessional = Object.entries(stats.professionalMap)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([name, value]) => {
@@ -100,8 +87,6 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
           .toUpperCase();
         
         let role = roleMap[normalized];
-        
-        // Fuzzy match if exact match fails (e.g., abbreviated names)
         if (!role) {
           const sysNameEntry = Object.entries(roleMap).find(([sysName]) => {
             if (sysName.length < 5 || normalized.length < 5) return false;
@@ -116,9 +101,28 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
           value 
         };
       });
+
+    return {
+      kpis: {
+        total: records.length,
+        avgPerDay: stats.uniqueDates.size ? Math.round(records.length / stats.uniqueDates.size) : 0,
+        professionals: stats.uniqueProfessionals.size,
+        units: stats.uniqueUnits.size,
+        topIndicator: topIndicator ? topIndicator[0] : "-",
+        coverage: `${coverage}/7 (${Math.round((coverage / 7) * 100)}%)`,
+      },
+      byIndicator: indicatorEntries.map(([name, value]) => ({ name, value })),
+      byUnit: Object.entries(stats.unitMap).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([name, value]) => ({ name, value })),
+      dailyVolume: Object.entries(stats.dailyMap).sort((a, b) => a[0].localeCompare(b[0])).map(([date, value]) => {
+        const [y, m, d] = date.split("-");
+        return { name: `${d}/${m}`, value };
+      }),
+      bySource: Object.entries(stats.sourceMap).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value })),
+      byProfessional,
+    };
   }, [records, roleMap]);
 
-  if (!records.length || !kpis) {
+  if (!records.length || !data) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-border bg-muted/30 py-16">
         <BarChart3 className="h-12 w-12 text-muted-foreground/50" />
@@ -128,17 +132,17 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
   }
 
   const kpiCards = [
-    { icon: Activity, label: "Total Procedimentos", value: kpis.total.toLocaleString("pt-BR") },
-    { icon: TrendingUp, label: "Média / Dia", value: kpis.avgPerDay.toLocaleString("pt-BR") },
-    { icon: Users, label: "Profissionais", value: kpis.professionals.toLocaleString("pt-BR") },
-    { icon: Building2, label: "Unidades", value: kpis.units.toLocaleString("pt-BR") },
-    { icon: BarChart3, label: "Top Indicador", value: kpis.topIndicator },
-    { icon: Layers, label: "Cobertura", value: kpis.coverage },
+    { icon: Activity, label: "Total Procedimentos", value: data.kpis.total.toLocaleString("pt-BR") },
+    { icon: TrendingUp, label: "Média / Dia", value: data.kpis.avgPerDay.toLocaleString("pt-BR") },
+    { icon: Users, label: "Profissionais", value: data.kpis.professionals.toLocaleString("pt-BR") },
+    { icon: Building2, label: "Unidades", value: data.kpis.units.toLocaleString("pt-BR") },
+    { icon: BarChart3, label: "Top Indicador", value: data.kpis.topIndicator },
+    { icon: Layers, label: "Cobertura", value: data.kpis.coverage },
   ];
 
   // Dynamic height based on item count
-  const unitChartHeight = Math.max(200, byUnit.length * 40);
-  const profChartHeight = Math.max(250, byProfessional.length * 36);
+  const unitChartHeight = Math.max(200, data.byUnit.length * 40);
+  const profChartHeight = Math.max(250, data.byProfessional.length * 36);
 
   return (
     <div className="space-y-6">
@@ -161,7 +165,7 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
         <div className="rounded-2xl border border-border bg-background/70 p-5">
           <h4 className="mb-4 text-sm font-bold uppercase tracking-[0.15em] text-muted-foreground">Procedimentos por Indicador</h4>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={byIndicator} layout="vertical" margin={{ left: 10, right: 30 }}>
+            <BarChart data={data.byIndicator} layout="vertical" margin={{ left: 10, right: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
@@ -176,8 +180,8 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
           <h4 className="mb-4 text-sm font-bold uppercase tracking-[0.15em] text-muted-foreground">Distribuição por Tipo</h4>
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
-              <Pie data={bySource} cx="50%" cy="50%" outerRadius={100} dataKey="value" nameKey="name" label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`} labelLine={false}>
-                {bySource.map((_, idx) => (
+              <Pie data={data.bySource} cx="50%" cy="50%" outerRadius={100} dataKey="value" nameKey="name" label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`} labelLine={false}>
+                {data.bySource.map((_, idx) => (
                   <Cell key={idx} fill={COLORS[idx % COLORS.length]} />
                 ))}
               </Pie>
@@ -194,7 +198,7 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
         <div className="rounded-2xl border border-border bg-background/70 p-5">
           <h4 className="mb-4 text-sm font-bold uppercase tracking-[0.15em] text-muted-foreground">Volume Diário</h4>
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={dailyVolume} margin={{ left: 10, right: 20 }}>
+            <LineChart data={data.dailyVolume} margin={{ left: 10, right: 20 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis dataKey="name" tick={{ fontSize: 10, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
@@ -208,7 +212,7 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
         <div className="rounded-2xl border border-border bg-background/70 p-5">
           <h4 className="mb-4 text-sm font-bold uppercase tracking-[0.15em] text-muted-foreground">Top 20 Unidades</h4>
           <ResponsiveContainer width="100%" height={unitChartHeight}>
-            <BarChart data={byUnit} layout="vertical" margin={{ left: 10, right: 30 }}>
+            <BarChart data={data.byUnit} layout="vertical" margin={{ left: 10, right: 30 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
               <YAxis dataKey="name" type="category" width={220} tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
@@ -223,7 +227,7 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
       <div className="rounded-2xl border border-border bg-background/70 p-5">
         <h4 className="mb-4 text-sm font-bold uppercase tracking-[0.15em] text-muted-foreground">Top 20 Profissionais</h4>
         <ResponsiveContainer width="100%" height={profChartHeight}>
-          <BarChart data={byProfessional} layout="vertical" margin={{ left: 10, right: 30 }}>
+          <BarChart data={data.byProfessional} layout="vertical" margin={{ left: 10, right: 30 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
             <XAxis type="number" tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }} />
             <YAxis dataKey="displayName" type="category" width={320} tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
@@ -238,4 +242,4 @@ export const AuditDashboard = ({ records, roleMap = {} }: Props) => {
       </div>
     </div>
   );
-};
+}

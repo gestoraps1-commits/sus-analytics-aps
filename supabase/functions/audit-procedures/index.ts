@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
   const unitFilter: string | null = body.unit ?? null;
   const professionalFilter: string | null = body.professional ?? null;
   const indicatorFilter: string | null = body.indicator ?? null; // e.g. "c2", "c3", ...
-  const limitRows: number = Math.min(Number(body.limit) || 2000, 5000);
+  const limitRows: number = Math.min(Number(body.limit) || 2000, 10000);
 
   // Determine which codes to filter
   const activeCodes = indicatorFilter && INDICATOR_CODES[indicatorFilter]

@@ -143,23 +143,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Listen for subsequent auth changes (sign-in, sign-out, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      // For the very first event, skip if getSession already handled it
+      console.log("[AuthContext] onAuthStateChange event:", event);
+
       if (!initializedRef.current) {
         initAuth(session?.user ?? null);
         return;
       }
 
-      // Subsequent events: update state without touching loading
-      // Guard against redundant user updates
+      // Subsequent events: update state and profile
       setUser(prev => {
         if (prev?.id === session?.user?.id) return prev;
         return session?.user ?? null;
       });
 
       if (session?.user) {
-        // Only fetch if appUser is missing or different
         if (appUser?.auth_user_id !== session.user.id) {
+          setLoading(true);
           await fetchAppUser(session.user.id);
+          setLoading(false);
         }
       } else {
         setAppUser(null);
