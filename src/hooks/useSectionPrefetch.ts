@@ -48,7 +48,7 @@ export function useSectionPrefetch({
     timerRef.current = setTimeout(() => {
       const sectionKeys = Object.keys(sections) as (keyof SectionSheetMap)[];
 
-      // Prefetch sections one at a time with staggered delay
+      // Prefetch sections one at a time with LARGER staggered delay
       sectionKeys.forEach((key, idx) => {
         if (key === activeSectionKey) return; // skip active section
 
@@ -57,10 +57,11 @@ export function useSectionPrefetch({
         if (!config || !sheet) return;
 
         setTimeout(() => {
+          console.log(`[Prefetch] Starting background prefetch for ${key}`);
           prefetchIndicatorData(queryClient, config, sheet, results, referenceUploadId);
-        }, idx * 1500); // stagger by 1.5s
+        }, idx * 5000); // Increased stagger to 5s to avoid choking the browser
       });
-    }, PREFETCH_DELAY_MS);
+    }, PREFETCH_DELAY_MS + 3000); // Add initial buffer
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);

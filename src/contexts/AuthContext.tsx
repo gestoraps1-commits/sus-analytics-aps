@@ -62,17 +62,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const initializedRef = useRef(false);
 
   const fetchAppUser = useCallback(async (authUserId: string) => {
+    console.log("[AuthContext] fetchAppUser started for UID:", authUserId);
     try {
-      const { data } = await supabase
+      console.log("[AuthContext] Fetching app_users...");
+      const { data, error: userError } = await supabase
         .from("app_users")
         .select("*")
         .eq("auth_user_id", authUserId)
         .maybeSingle();
 
-      const { data: userRoles } = await supabase
+      if (userError) {
+        console.error("[AuthContext] Error fetching app_users:", userError);
+      } else {
+        console.log("[AuthContext] app_users fetched:", data ? "found" : "not found");
+      }
+
+      console.log("[AuthContext] Fetching user_roles...");
+      const { data: userRoles, error: rolesError } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", authUserId);
+
+      if (rolesError) {
+        console.error("[AuthContext] Error fetching user_roles:", rolesError);
+      } else {
+        console.log("[AuthContext] user_roles fetched:", userRoles?.length || 0);
+      }
 
       const appUserData = data as AppUser | null;
       if (appUserData) {
@@ -120,7 +135,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     };
 
-    // getSession is the most reliable source for the initial state
     supabase.auth.getSession().then(({ data: { session } }) => {
       initAuth(session?.user ?? null);
     }).catch(() => {
@@ -136,9 +150,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Subsequent events: update state without touching loading
-      setUser(session?.user ?? null);
+      // Guard against redundant user updates
+      setUser(prev => {
+        if (prev?.id === session?.user?.id) return prev;
+        return session?.user ?? null;
+      });
+
       if (session?.user) {
-        await fetchAppUser(session.user.id);
+        // Only fetch if appUser is missing or different
+        if (appUser?.auth_user_id !== session.user.id) {
+          await fetchAppUser(session.user.id);
+        }
       } else {
         setAppUser(null);
         setPermissions([]);
