@@ -51,10 +51,6 @@ export type IndicatorFlagKey = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "
 
 export type IndicatorFlagStatus = "done" | "attention" | "tracking";
 
-export type IndicatorProcedureEvent = {
-  date: string;
-  professional: string;
-};
 
 export type IndicatorFlagDeadline = {
   date: string;
@@ -73,12 +69,8 @@ export type IndicatorFlag = {
   status: IndicatorFlagStatus;
   completed: boolean;
   points: number;
-  earnedPoints: number;
-  metric: string;
-  summary: string;
   detail: string;
   deadline?: IndicatorFlagDeadline | null;
-  events?: IndicatorProcedureEvent[];
 };
 
 export type IndicatorClassification = "regular" | "suficiente" | "bom" | "otimo";

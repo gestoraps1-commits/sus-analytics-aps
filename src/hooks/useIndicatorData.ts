@@ -14,6 +14,7 @@ import {
   normalizeDateValue,
   normalizeDigits,
 } from "@/types/reference-upload";
+import { indicatorProgressTracker } from "@/lib/progress-tracker";
 
 export type IndicatorSectionConfig = {
   /** Unique section key, e.g. "c3", "c5" */
@@ -64,6 +65,7 @@ const sortIndicatorPatients = (patients: IndicatorPatient[]) =>
   );
 
 async function resolveSearchResults(
+  sectionKey: string,
   sheet: ParsedSheet,
   externalResults: Record<number, SearchResult>,
   referenceUploadId: string | null,
@@ -71,18 +73,24 @@ async function resolveSearchResults(
   // If we already have external results, use them
   if (Object.keys(externalResults).length > 0) return externalResults;
 
+  indicatorProgressTracker.update(sectionKey, 10);
+
   // Try IndexedDB cache for search results
   if (referenceUploadId) {
     const cacheKey = searchCacheKey(sheet.name, referenceUploadId);
     const cached = await idbGet<Record<number, SearchResult>>(cacheKey);
     if (cached && !isCacheStale(cached.timestamp)) {
+      indicatorProgressTracker.update(sectionKey, 30);
       return cached.data;
     }
   }
 
   // Fetch from edge function
   const referenceRows = buildReferenceRows(sheet);
-  if (!referenceRows.length) return {};
+  if (!referenceRows.length) {
+    indicatorProgressTracker.update(sectionKey, 30);
+    return {};
+  }
 
   const { data: searchData, error: searchError } = await supabase.functions.invoke(
     "search-reference-data",
@@ -97,6 +105,8 @@ async function resolveSearchResults(
   const resolved = Object.fromEntries(
     searchResponse.results.map((result) => [result.index, result]),
   );
+
+  indicatorProgressTracker.update(sectionKey, 30);
 
   // Persist search results
   if (referenceUploadId) {
@@ -114,13 +124,16 @@ async function resolveSearchResults(
   return resolved;
 }
 
-async function fetchIndicatorData(
+export async function fetchIndicatorData(
   config: IndicatorSectionConfig,
   sheet: ParsedSheet,
   externalResults: Record<number, SearchResult>,
   referenceUploadId: string | null,
 ): Promise<IndicatorPatient[]> {
-  const resolvedResults = await resolveSearchResults(sheet, externalResults, referenceUploadId);
+  const sectionKey = config.sectionKey;
+  indicatorProgressTracker.update(sectionKey, 5);
+
+  const resolvedResults = await resolveSearchResults(sectionKey, sheet, externalResults, referenceUploadId);
 
   const indicatorRows = buildReferenceRows(sheet)
     .map((referenceRow) => {
@@ -139,7 +152,10 @@ async function fetchIndicatorData(
     })
     .filter((row) => row.nome || row.cpf || row.cns);
 
-  if (!indicatorRows.length) return [];
+  if (!indicatorRows.length) {
+    indicatorProgressTracker.update(sectionKey, 100);
+    return [];
+  }
 
   // Build acs/microarea lookup from reference rows
   const refRows = buildReferenceRows(sheet);
@@ -148,11 +164,9 @@ async function fetchIndicatorData(
     acsLookup.set(ref.index, { acs: ref.acs, microarea: ref.microarea });
   }
 
-  const patients: IndicatorPatient[] = [];
-  const batchSize = config.batchSize || 200; // Default batch size increased to 200
-
+  const batchSize = config.batchSize || 200;
   const indicatorPatients: IndicatorPatient[] = [];
-  const limit = 4; // Max concurrent requests
+  const limit = 4;
   const chunks = [];
   
   for (let i = 0; i < indicatorRows.length; i += batchSize) {
@@ -176,7 +190,6 @@ async function fetchIndicatorData(
       const response = data as IndicatorResponse;
       if (!response.success) throw new Error(response.error || `Falha ao calcular ${config.errorLabel}.`);
 
-      // Enrich with acs/microarea from sheet
       for (const p of response.patients) {
         const extra = acsLookup.get(p.index);
         if (extra) {
@@ -187,17 +200,22 @@ async function fetchIndicatorData(
 
       indicatorPatients.push(...response.patients);
     }
+
+    // Report progress
+    const progress = Math.min(100, Math.round(((i + currentBatch.length) / chunks.length) * 100));
+    indicatorProgressTracker.update(sectionKey, progress);
   }
 
-  patients.push(...indicatorPatients);
+  // Final progress report
+  indicatorProgressTracker.update(sectionKey, 100);
 
   // Cache to IndexedDB
   if (referenceUploadId) {
     const cacheKey = indicatorCacheKey(config.sectionKey, sheet.name, referenceUploadId);
-    void idbSet(cacheKey, patients, referenceUploadId);
+    void idbSet(cacheKey, indicatorPatients, referenceUploadId);
   }
 
-  return sortIndicatorPatients(patients);
+  return sortIndicatorPatients(indicatorPatients);
 }
 
 export function useIndicatorData({
@@ -263,18 +281,17 @@ export function prefetchIndicatorData(
   results: Record<number, SearchResult>,
   referenceUploadId: string | null,
 ) {
-  if (!sheet || sheet.mode !== "citizen") return;
+  if (!sheet || sheet.mode !== "citizen") {
+    indicatorProgressTracker.update(config.sectionKey, 100);
+    return;
+  }
 
   const queryKey = ["indicator", config.sectionKey, sheet.name, referenceUploadId ?? null];
-
-  // Only prefetch if not already cached
-  const existing = queryClient.getQueryData(queryKey);
-  if (existing) return;
 
   void queryClient.prefetchQuery({
     queryKey,
     queryFn: () => fetchIndicatorData(config, sheet, results, referenceUploadId),
-    staleTime: 5 * 60 * 1000,
+    staleTime: Infinity,
   });
 }
 

@@ -10,12 +10,16 @@ export function useReferenceUpload() {
   const [referenceUploadId, setReferenceUploadId] = useState<string | null>(null);
   const [resultsBySheet, setResultsBySheet] = useState<Record<string, Record<number, SearchResult>>>({});
   const [indicatorLoadStage, setIndicatorLoadStage] = useState<IndicatorLoadStage>("idle");
+  const [isHydrating, setIsHydrating] = useState(true);
 
   useEffect(() => {
     const hydratePersistedUpload = async () => {
       try {
         const persistedUpload = await loadPersistedUpload();
-        if (!persistedUpload) return;
+        if (!persistedUpload) {
+          setIsHydrating(false);
+          return;
+        }
         setReferenceUploadId(persistedUpload.id);
         setSheets(persistedUpload.sheets);
         setResultsBySheet(persistedUpload.resultsBySheet);
@@ -28,6 +32,8 @@ export function useReferenceUpload() {
       } catch {
         setReferenceUploadId(null);
         setIndicatorLoadStage("error");
+      } finally {
+        setIsHydrating(false);
       }
     };
     void hydratePersistedUpload();
@@ -60,5 +66,6 @@ export function useReferenceUpload() {
     handleResultsChange,
     indicatorLoadStage,
     setIndicatorLoadStage,
+    isHydrating,
   };
 }

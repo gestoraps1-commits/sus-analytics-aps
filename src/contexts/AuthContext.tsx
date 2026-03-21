@@ -61,7 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Guard against double-init race between onAuthStateChange and getSession
   const initializedRef = useRef(false);
 
+  const currentUserAuthIdRef = useRef<string | null>(null);
+
   const fetchAppUser = useCallback(async (authUserId: string) => {
+    // ... existing implementation remains here ...
     console.log("[AuthContext] fetchAppUser started for UID:", authUserId);
     try {
       console.log("[AuthContext] Fetching app_users...");
@@ -129,6 +132,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initializedRef.current = true;
 
       setUser(sessionUser);
+      currentUserAuthIdRef.current = sessionUser?.id || null;
+      
       if (sessionUser) {
         await fetchAppUser(sessionUser.id);
       }
@@ -157,12 +162,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
 
       if (session?.user) {
-        if (appUser?.auth_user_id !== session.user.id) {
+        if (currentUserAuthIdRef.current !== session.user.id) {
+          currentUserAuthIdRef.current = session.user.id;
           setLoading(true);
           await fetchAppUser(session.user.id);
           setLoading(false);
         }
       } else {
+        currentUserAuthIdRef.current = null;
         setAppUser(null);
         setPermissions([]);
       }

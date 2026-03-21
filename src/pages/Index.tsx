@@ -5,6 +5,7 @@ import { useReferenceUpload } from "@/hooks/useReferenceUpload";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MainHeader } from "@/components/layout/MainHeader";
 import { Loader2 } from "lucide-react";
+import { DataLoadingOverlay } from "@/components/layout/DataLoadingOverlay";
 
 import { 
   SectionKey, 
@@ -52,15 +53,8 @@ const Index = () => {
     handleResultsChange,
     indicatorLoadStage,
     setIndicatorLoadStage,
+    isHydrating,
   } = useReferenceUpload();
-
-  const [activeSection, setActiveSection] = useState<SectionKey>(() => {
-    const hashSection = getSectionFromHash(window.location.hash);
-    if (isAdmin || hasAccess(hashSection)) return hashSection;
-    return visibleMenu[0]?.section || "painel";
-  });
-  
-  const [initialSearchFilter, setInitialSearchFilter] = useState("");
 
   const visibleMenu = useMemo(() => {
     return menuItems.filter((item) => {
@@ -68,6 +62,14 @@ const Index = () => {
       return hasAccess(item.section);
     });
   }, [isAdmin, hasAccess]);
+
+  const [activeSection, setActiveSection] = useState<SectionKey>(() => {
+    const hashSection = getSectionFromHash(window.location.hash);
+    if (isAdmin || hasAccess(hashSection)) return hashSection;
+    return (visibleMenu && visibleMenu.length > 0) ? visibleMenu[0].section : "painel";
+  });
+  
+  const [initialSearchFilter, setInitialSearchFilter] = useState("");
 
   useEffect(() => {
     const syncSectionWithHash = () => {
@@ -120,20 +122,30 @@ const Index = () => {
   const currentSectionInfo = sectionTitles[activeSection];
   const isPreparingIndicatorData = referenceUploadId !== null && ["uploading", "matching", "indicator"].includes(indicatorLoadStage);
 
+  const [overlaySkipped, setOverlaySkipped] = useState(false);
+
   const prefetchSections = useMemo(() => ({
+    c2: { sheet: sheetsBySection.c2, results: resultsBySheet[selectedSheetName] ?? {} },
     c3: { sheet: sheetsBySection.c3, results: resultsBySection.c3 },
     c4: { sheet: sheetsBySection.c4, results: resultsBySection.c4 },
     c5: { sheet: sheetsBySection.c5, results: resultsBySection.c5 },
     c6: { sheet: sheetsBySection.c6, results: resultsBySection.c6 },
     c7: { sheet: sheetsBySection.c7, results: resultsBySection.c7 },
-  }), [sheetsBySection, resultsBySection]);
+  }), [sheetsBySection, resultsBySection, resultsBySheet, selectedSheetName]);
 
-  useSectionPrefetch({
+  const { sectionProgress, overallProgress, isComplete } = useSectionPrefetch({
     activeSection,
     referenceUploadId,
     sections: prefetchSections,
     enabled: indicatorLoadStage === "ready",
   });
+
+  useEffect(() => {
+    // Reset skip state when a new upload starts
+    if (indicatorLoadStage === "uploading") {
+      setOverlaySkipped(false);
+    }
+  }, [indicatorLoadStage]);
 
   const renderSection = () => {
     // Security check: if not authorized for this section, show nothing
@@ -248,6 +260,19 @@ const Index = () => {
       default: return null;
     }
   };
+
+  const isInitialLoading = isHydrating || (indicatorLoadStage === "ready" && !isComplete && !overlaySkipped);
+
+  if (isInitialLoading) {
+    return (
+      <DataLoadingOverlay
+        isVisible={true}
+        onSkip={() => setOverlaySkipped(true)}
+        overallProgress={isHydrating ? 0 : overallProgress}
+        sectionProgress={sectionProgress}
+      />
+    );
+  }
 
   return (
     <main className="min-h-screen bg-background text-foreground lg:grid lg:grid-cols-[280px_1fr]">

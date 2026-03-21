@@ -50,13 +50,13 @@ type IndicatorSummary = {
 };
 
 const SECTION_META: Record<string, { label: string; shortLabel: string; icon: typeof Baby; color: string; target: number; temporalMode?: boolean; flagWeights?: Record<string, number> }> = {
-  c2: { label: "C2 - Desenv. Infantil", shortLabel: "C2", icon: Baby, color: "hsl(var(--primary))", target: 80 },
-  c3: { label: "C3 - Gestantes", shortLabel: "C3", icon: Heart, color: "hsl(var(--accent))", target: 75, temporalMode: true },
-  c4: { label: "C4 - Diabetes", shortLabel: "C4", icon: ShieldCheck, color: "#f59e0b", target: 70 },
-  c5: { label: "C5 - Hipertensão", shortLabel: "C5", icon: ShieldCheck, color: "#ef4444", target: 70 },
-  c6: { label: "C6 - Pessoa Idosa", shortLabel: "C6", icon: Users, color: "#8b5cf6", target: 65 },
+  c2: { label: "C2 · Desenvolvimento Infantil", shortLabel: "C2", icon: Baby, color: "hsl(var(--primary))", target: 80 },
+  c3: { label: "C3 · Gestantes e Puérperas", shortLabel: "C3", icon: Heart, color: "hsl(var(--accent))", target: 75, temporalMode: true },
+  c4: { label: "C4 · Pessoa com Diabetes", shortLabel: "C4", icon: ShieldCheck, color: "#f59e0b", target: 70 },
+  c5: { label: "C5 · Pessoa com Hipertensão", shortLabel: "C5", icon: ShieldCheck, color: "#ef4444", target: 70 },
+  c6: { label: "C6 · Pessoa Idosa", shortLabel: "C6", icon: Users, color: "#8b5cf6", target: 65 },
   c7: {
-    label: "C7 - PCCU",
+    label: "C7 · PCCU e Prevenção",
     shortLabel: "C7",
     icon: ShieldCheck,
     color: "#06b6d4",

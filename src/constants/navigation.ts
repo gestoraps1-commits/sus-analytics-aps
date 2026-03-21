@@ -1,4 +1,4 @@
-import { Baby, BarChart3, Building2, ClipboardList, FileDown, Heart, Link2, Settings, ShieldCheck, Upload, UserRound, UserCog, LucideIcon } from "lucide-react";
+import { Baby, BarChart3, Building2, ClipboardList, FileDown, Heart, LayoutDashboard, Link2, Settings, ShieldCheck, Upload, UserRound, UserCog, LucideIcon } from "lucide-react";
 
 export type SectionKey = 
   | "conexao" 
@@ -57,7 +57,7 @@ export const sectionTitles: Record<SectionKey, SectionHeaderContent> = {
   painel: {
     eyebrow: "Visão Geral",
     title: "Painel de Indicadores",
-    description: "Visão consolidada dos indicadores C2 a C7, com cards de resumo, filtros globais e gráfico comparativo de desempenho por programa.",
+    description: "Visão consolidada do desempenho (0-100 pontos) entre os indicadores C2 a C7, com cruzamento nominal e monitoramento de metas oficiais.",
   },
   upload: {
     eyebrow: "Upload",

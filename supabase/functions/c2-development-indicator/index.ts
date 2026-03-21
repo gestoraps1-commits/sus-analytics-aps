@@ -41,15 +41,11 @@ type IndicatorFlag = {
   status: IndicatorFlagStatus;
   completed: boolean;
   points: number;
-  earnedPoints: number;
-  metric: string;
-  summary: string;
   detail: string;
   deadline?: {
     date: string;
     label: string;
   } | null;
-  events?: IndicatorProcedureEvent[];
 };
 
 type IndicatorPatient = {
@@ -225,12 +221,9 @@ const makeFlag = (
   key: IndicatorFlagKey,
   title: string,
   completed: boolean,
-  metric: string,
-  summary: string,
   detail: string,
   dueDate: Date,
   now: Date,
-  events: IndicatorProcedureEvent[] = [],
   deadlineLabel = "Data limite para registro",
 ): IndicatorFlag => {
   const status: IndicatorFlagStatus = completed ? "done" : now.getTime() <= dueDate.getTime() ? "tracking" : "attention";
@@ -240,15 +233,11 @@ const makeFlag = (
     status,
     completed,
     points: 20,
-    earnedPoints: completed ? 20 : 0,
-    metric,
-    summary,
     detail,
     deadline: {
       date: dueDate.toISOString().slice(0, 10),
       label: deadlineLabel,
     },
-    events: dedupeProcedureEvents(events),
   };
 };
 
@@ -599,6 +588,12 @@ Deno.serve(async (req) => {
       const evaluationEnd = clampDate(today, due24Months);
       const citizenId = match.citizenId;
 
+      // Denominator: children up to 2 years (24 months)
+      const monthsOld = monthsBetween(birthDate, today);
+      if (monthsOld > 24) {
+        return [];
+      }
+
       const consultationRows = (consultationsByCitizen.get(citizenId) ?? []).filter((event) => {
         if (!(isMedicalCbo(event.cbo1) || isMedicalCbo(event.cbo2))) return false;
         const date = event.event_date.slice(0, 10);
@@ -607,11 +602,25 @@ Deno.serve(async (req) => {
         return eventDate.getTime() >= birthDate.getTime() && eventDate.getTime() <= evaluationEnd.getTime();
       });
 
-      const consultationEvents = dedupeProcedureEvents(
-        consultationRows.flatMap((event) =>
+      // User rule: also include teleconsultation 0301010250 from procedures
+      const teleConsultRows = (procedureRowsByCitizen.get(citizenId) ?? []).filter((row) => {
+        const date = row.event_date.slice(0, 10);
+        if (!isValidDateValue(date)) return false;
+        const eventDate = toDate(date);
+        const codes = [normalizeDigits(row.proc_a), normalizeDigits(row.proc_s)];
+        return codes.includes("0301010250") &&
+               eventDate.getTime() >= birthDate.getTime() && 
+               eventDate.getTime() <= evaluationEnd.getTime();
+      });
+
+      const consultationEvents = dedupeProcedureEvents([
+        ...consultationRows.flatMap((event) =>
           buildEventsFromProfessionals(event.event_date.slice(0, 10), [event.professional1, event.professional2]),
         ),
-      );
+        ...teleConsultRows.flatMap((row) =>
+          buildEventsFromProfessionals(row.event_date.slice(0, 10), [row.professional1, row.professional2]),
+        )
+      ]);
       const consultationDates = collectQualifiedDates(consultationEvents);
 
       const firstConsultDate = consultationDates[0] ?? null;
@@ -620,12 +629,9 @@ Deno.serve(async (req) => {
         "A",
         "1ª consulta até 30 dias",
         completedA,
-        firstConsultDate ? `Primeira consulta em ${formatDate(firstConsultDate)}` : "Nenhuma consulta válida localizada",
-        completedA ? "Consulta inicial registrada dentro do prazo da portaria." : today.getTime() <= due30Days.getTime() ? "Ainda há tempo para registrar a primeira consulta." : "Primeira consulta não foi localizada até 30 dias de vida.",
-        `Consultas médicas/enfermagem com profissional identificado: ${consultationDates.length}. Prazo: ${formatDate(due30Days.toISOString().slice(0, 10))}.`,
+        `Primeira consulta: ${formatDate(firstConsultDate)}. Prazo: ${formatDate(due30Days.toISOString().slice(0, 10))}.`,
         due30Days,
         today,
-        firstConsultDate ? consultationEvents.filter((event) => event.date === firstConsultDate) : [],
       );
 
       const completedB = consultationDates.length >= 9;
@@ -633,109 +639,58 @@ Deno.serve(async (req) => {
         "B",
         "9 consultas até 2 anos",
         completedB,
-        `${consultationDates.length}/9 consultas`,
-        completedB ? "Quantidade mínima de consultas atingida." : today.getTime() <= due24Months.getTime() ? "Criança ainda está em acompanhamento para completar 9 consultas." : "Meta de 9 consultas não foi alcançada até os 2 anos.",
         consultationDates.length
-          ? `Datas localizadas com profissional identificado: ${listFormatter.format(consultationDates.slice(0, 5).map(formatDate))}${consultationDates.length > 5 ? "…" : ""}`
-          : "Nenhuma consulta válida com profissional identificado foi encontrada para a regra B.",
+          ? `Datas: ${listFormatter.format(consultationDates.slice(0, 5).map(formatDate))}${consultationDates.length > 5 ? "…" : ""}`
+          : "Nenhuma consulta localizada.",
         due24Months,
         today,
-        consultationEvents,
       );
 
-      const anthropometryDateMap = new Map<string, IndicatorProcedureEvent[]>();
-      const appendAnthropometryEvents = (date: string, events: IndicatorProcedureEvent[]) => {
+      const anthropometryDateMap = new Map<string, { date: string; professional: string }[]>();
+      const appendAnthropometryEvents = (date: string, professionals: string[]) => {
         const normalizedDate = date.slice(0, 10);
         if (!isValidDateValue(normalizedDate)) return;
         const eventDate = toDate(normalizedDate);
         if (eventDate.getTime() < birthDate.getTime() || eventDate.getTime() > evaluationEnd.getTime()) return;
         const current = anthropometryDateMap.get(normalizedDate) ?? [];
-        current.push(...events);
+        professionals.forEach(p => current.push({ date: normalizedDate, professional: p }));
         anthropometryDateMap.set(normalizedDate, current);
       };
 
       for (const row of anthropometryAttendanceRowsByCitizen.get(citizenId) ?? []) {
-        appendAnthropometryEvents(
-          row.event_date,
-          buildEventsFromProfessionals(row.event_date.slice(0, 10), [row.professional1, row.professional2]),
-        );
+        appendAnthropometryEvents(row.event_date, [row.professional1 || "", row.professional2 || ""].filter(isNamedProfessional));
       }
-
       for (const row of anthropometryVisitRowsByCitizen.get(citizenId) ?? []) {
-        appendAnthropometryEvents(row.event_date, buildEventsFromProfessionals(row.event_date.slice(0, 10), [row.professional]));
+        appendAnthropometryEvents(row.event_date, [row.professional || ""].filter(isNamedProfessional));
       }
-
-      const procedureDateMap = new Map<string, { anthropometric: boolean; growth: boolean; weight: boolean; height: boolean; events: IndicatorProcedureEvent[] }>();
       for (const row of procedureRowsByCitizen.get(citizenId) ?? []) {
-        const date = row.event_date.slice(0, 10);
-        if (!isValidDateValue(date)) continue;
-        const eventDate = toDate(date);
-        if (eventDate.getTime() < birthDate.getTime() || eventDate.getTime() > evaluationEnd.getTime()) continue;
-        const current = procedureDateMap.get(date) ?? { anthropometric: false, growth: false, weight: false, height: false, events: [] };
         const codes = [normalizeDigits(row.proc_a), normalizeDigits(row.proc_s)];
-        current.anthropometric = current.anthropometric || codes.includes("0101040024");
-        current.growth = current.growth || codes.includes("0301010269");
-        current.weight = current.weight || codes.includes("0101040083");
-        current.height = current.height || codes.includes("0101040075");
-        current.events.push(...buildEventsFromProfessionals(date, [row.professional1, row.professional2]));
-        procedureDateMap.set(date, current);
-      }
-
-      for (const [date, flags] of procedureDateMap.entries()) {
-        if (flags.anthropometric || flags.growth || (flags.weight && flags.height)) {
-          appendAnthropometryEvents(date, flags.events);
+        if (codes.includes("0101040024") || codes.includes("0301010269") || (codes.includes("0101040083") && codes.includes("0101040075"))) {
+          appendAnthropometryEvents(row.event_date, [row.professional1 || "", row.professional2 || ""].filter(isNamedProfessional));
         }
       }
 
-      const anthropometryEvents = dedupeProcedureEvents([...anthropometryDateMap.values()].flat());
-      const anthropometryDates = collectQualifiedDates(anthropometryEvents);
-      const anthropometryRecords = [
-        ...(anthropometryAttendanceRowsByCitizen.get(citizenId) ?? []).map((entry) => ({
-          date: entry.event_date.slice(0, 10),
-          weight: entry.weight ?? null,
-          height: entry.height ?? null,
-        })),
-        ...(anthropometryVisitRowsByCitizen.get(citizenId) ?? []).map((entry) => ({
-          date: entry.event_date.slice(0, 10),
-          weight: entry.weight ?? null,
-          height: entry.height ?? null,
-        })),
-      ]
-        .filter((entry) => isValidDateValue(entry.date))
-        .filter((entry) => {
-          const eventDate = toDate(entry.date);
-          return eventDate.getTime() >= birthDate.getTime() && eventDate.getTime() <= evaluationEnd.getTime();
-        })
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 2);
-
+      const anthropometryDates = [...anthropometryDateMap.keys()].sort();
       const completedC = anthropometryDates.length >= 9;
       const flagC = makeFlag(
         "C",
         "9 registros de peso e altura",
         completedC,
-        `${anthropometryDates.length}/9 registros`,
-        completedC ? "Acompanhamento antropométrico suficiente para a regra." : today.getTime() <= due24Months.getTime() ? "Ainda é possível completar os 9 registros simultâneos." : "Meta de 9 registros de peso e altura não foi atingida até os 2 anos.",
         anthropometryDates.length
-          ? `Registros válidos com profissional identificado em: ${listFormatter.format(anthropometryDates.slice(0, 5).map(formatDate))}${anthropometryDates.length > 5 ? "…" : ""}`
-          : "Nenhum registro simultâneo com profissional identificado foi localizado.",
+          ? `Registros: ${listFormatter.format(anthropometryDates.slice(0, 5).map(formatDate))}${anthropometryDates.length > 5 ? "…" : ""}`
+          : "Nenhum registro localizado.",
         due24Months,
         today,
-        anthropometryEvents,
       );
 
-      const validVisitRows = (visitRowsByCitizen.get(citizenId) ?? []).filter((visit) => {
-        if (!(isAcsCbo(visit.cbo) && (visit.st_acomp_recem_nascido === 1 || visit.st_acomp_crianca === 1))) return false;
-        const date = visit.event_date.slice(0, 10);
-        if (!isValidDateValue(date)) return false;
-        const eventDate = toDate(date);
-        return eventDate.getTime() >= birthDate.getTime() && eventDate.getTime() <= clampDate(today, due6Months).getTime();
-      });
+      const anthropometryRecords = [
+        ...(anthropometryAttendanceRowsByCitizen.get(citizenId) ?? []).map(r => ({ date: r.event_date.slice(0, 10), weight: r.weight ?? null, height: r.height ?? null })),
+        ...(anthropometryVisitRowsByCitizen.get(citizenId) ?? []).map(r => ({ date: r.event_date.slice(0, 10), weight: r.weight ?? null, height: r.height ?? null })),
+      ].filter(r => isValidDateValue(r.date)).sort((a,b) => b.date.localeCompare(a.date)).slice(0, 2);
 
-      const visitEvents = dedupeProcedureEvents(
-        validVisitRows.flatMap((visit) => buildEventsFromProfessionals(visit.event_date.slice(0, 10), [visit.professional])),
-      );
-      const visitDates = collectQualifiedDates(visitEvents);
+      const visitDates = collectQualifiedDates((visitRowsByCitizen.get(citizenId) ?? [])
+        .filter(v => isAcsCbo(v.cbo) && (v.st_acomp_recem_nascido === 1 || v.st_acomp_crianca === 1))
+        .flatMap(v => buildEventsFromProfessionals(v.event_date.slice(0, 10), [v.professional])));
 
       const firstVisitInWindow = visitDates[0] ?? null;
       const completedD = Boolean(firstVisitInWindow && toDate(firstVisitInWindow).getTime() <= due30Days.getTime() && visitDates.length >= 2);
@@ -743,42 +698,19 @@ Deno.serve(async (req) => {
         "D",
         "2 visitas ACS/TACS",
         completedD,
-        `${visitDates.length}/2 visitas`,
-        completedD
-          ? "As duas visitas domiciliares exigidas foram registradas no prazo."
-          : today.getTime() <= due6Months.getTime()
-            ? "A criança ainda está em janela para completar as visitas domiciliares."
-            : "As visitas domiciliares mínimas não foram comprovadas até 6 meses.",
         firstVisitInWindow
-          ? `Primeira visita com profissional identificado em ${formatDate(firstVisitInWindow)}. Segunda meta até ${formatDate(due6Months.toISOString().slice(0, 10))}.`
-          : "Nenhuma visita domiciliar válida com profissional identificado foi localizada.",
+          ? `Primeira visita em ${formatDate(firstVisitInWindow)}. Meta até ${formatDate(due6Months.toISOString().slice(0, 10))}.`
+          : "Nenhuma visita localizada.",
         due6Months,
         today,
-        visitEvents,
       );
 
-      const vaccineRows = (vaccineRowsByCitizen.get(citizenId) ?? []).filter((event) => {
-        const date = event.event_date.slice(0, 10);
-        if (!isValidDateValue(date)) return false;
-        const eventDate = toDate(date);
-        return eventDate.getTime() >= birthDate.getTime() && eventDate.getTime() <= evaluationEnd.getTime();
-      });
-
-      const vaccineRowsWithProfessional = vaccineRows.filter((event) => isNamedProfessional(event.professional));
-      const vaccineEvents = dedupeProcedureEvents(
-        vaccineRowsWithProfessional.flatMap((event) => buildEventsFromProfessionals(event.event_date.slice(0, 10), [event.professional])),
-      );
-
+      const vaccineRowsWithProfessional = (vaccineRowsByCitizen.get(citizenId) ?? []).filter(v => isNamedProfessional(v.professional));
       const countDistinctDatesByCodes = (codes: string[], minDate?: Date) =>
-        toDistinctSortedDates(
-          vaccineRowsWithProfessional
-            .filter((event) => codes.includes(String(event.vaccine_code ?? "")))
-            .filter((event) => {
-              const date = event.event_date.slice(0, 10);
-              return !minDate || toDate(date).getTime() >= minDate.getTime();
-            })
-            .map((event) => event.event_date.slice(0, 10)),
-        ).length;
+        toDistinctSortedDates(vaccineRowsWithProfessional
+          .filter(v => codes.includes(String(v.vaccine_code ?? "")))
+          .filter(v => !minDate || toDate(v.event_date.slice(0, 10)).getTime() >= minDate.getTime())
+          .map(v => v.event_date.slice(0, 10))).length;
 
       const primaryCount = countDistinctDatesByCodes(PRIMARY_DTP_HEPB_HIB_CODES);
       const vipCount = countDistinctDatesByCodes(VIP_CODES);
@@ -790,15 +722,12 @@ Deno.serve(async (req) => {
         "Vacinação completa",
         completedE,
         `DTP/HepB/Hib ${primaryCount}/3 · VIP ${vipCount}/3 · SCR ${scrCount}/2 · Pneumo ${pneumoCount}/2`,
-        completedE ? "Esquema vacinal exigido para o indicador foi encontrado." : today.getTime() <= due24Months.getTime() ? "Esquema vacinal ainda pode ser completado dentro da janela de 2 anos." : "Esquema vacinal incompleto para a composição do indicador.",
-        "Foram considerados apenas imunobiológicos com data válida e profissional identificado para penta/componentes, VIP, SCR/SCRV e pneumocócica.",
         due24Months,
         today,
-        vaccineEvents,
       );
 
       const flags = [flagA, flagB, flagC, flagD, flagE];
-      const totalPoints = flags.reduce((sum, flag) => sum + flag.earnedPoints, 0);
+      const totalPoints = flags.reduce((sum, flag) => sum + (flag.completed ? flag.points : 0), 0);
 
       return [{
         index: row.index,
@@ -809,7 +738,7 @@ Deno.serve(async (req) => {
         sexo: match.sexo ?? row.sexo ?? "",
         unidade: match.unidade ?? row.unidade ?? "",
         equipe: match.equipe ?? row.equipe ?? "",
-        idadeEmMeses: monthsBetween(birthDate, today),
+        idadeEmMeses: monthsOld,
         totalPoints,
         classification: getClassification(totalPoints),
         completedFlags: flags.filter((flag) => flag.status === "done").length,

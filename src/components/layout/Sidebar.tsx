@@ -18,14 +18,26 @@ type SidebarProps = {
 export const Sidebar = ({ menuItems, activeSection, onSectionChange, appUser, signOut }: SidebarProps) => {
   return (
     <aside className="flex min-h-screen flex-col border-r border-border bg-primary text-primary-foreground">
-      <div className="border-b border-primary-foreground/10 px-6 py-7">
-        <div className="flex items-start gap-4">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-accent text-accent-foreground shadow-lg transition-transform hover:scale-110">
-            <Heart className="h-5 w-5" />
+      <div className="px-6 py-8">
+        <div className="flex flex-col gap-5">
+          <div className="flex h-12 w-auto items-center justify-start transition-all hover:scale-[1.02] duration-300">
+            <img 
+              src="/logo-full.png" 
+              alt="SUS Analytics" 
+              className="h-full w-auto object-contain opacity-100" 
+            />
           </div>
-          <div className="min-w-0">
-            <h1 className="truncate text-xl font-black tracking-tight">Boas Práticas - APS</h1>
-            <p className="mt-1 text-sm text-primary-foreground/70">Sus Analytics · Dados que orientam cuidado</p>
+          
+          <div className="relative">
+            <div className="absolute -top-3 left-0 w-full h-[1px] bg-white/10" />
+            <div className="pt-2">
+              <h1 className="text-[22px] font-black tracking-tighter text-white leading-none">
+                SUS-ANALYTICS
+              </h1>
+              <p className="mt-2 text-[11px] font-bold tracking-[0.25em] text-white/40 uppercase leading-none">
+                DADOS QUE CUIDAM
+              </p>
+            </div>
           </div>
         </div>
       </div>
