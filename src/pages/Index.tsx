@@ -26,6 +26,7 @@ import {
 const ConnectionSection = lazy(() => import("@/components/ConnectionSection").then(m => ({ default: m.ConnectionSection })));
 const UploadSection = lazy(() => import("@/components/UploadSection").then(m => ({ default: m.UploadSection })));
 const IndicatorDashboardSection = lazy(() => import("@/components/IndicatorDashboardSection").then(m => ({ default: m.IndicatorDashboardSection })));
+const BiIndicadoresSection = lazy(() => import("@/components/BiIndicadoresSection").then(m => ({ default: m.BiIndicadoresSection })));
 const C1DevelopmentSection = lazy(() => import("@/components/C1DevelopmentSection").then(m => ({ default: m.C1DevelopmentSection })));
 const C2NominalListSection = lazy(() => import("@/components/C2NominalListSection").then(m => ({ default: m.C2NominalListSection })));
 const C3GestationSection = lazy(() => import("@/components/C3GestationSection").then(m => ({ default: m.C3GestationSection })));
@@ -54,6 +55,10 @@ const Index = () => {
     indicatorLoadStage,
     setIndicatorLoadStage,
     isHydrating,
+    activeSource,
+    hasStandard,
+    hasSiaps,
+    handleToggleSource,
   } = useReferenceUpload();
 
   const visibleMenu = useMemo(() => {
@@ -112,6 +117,7 @@ const Index = () => {
   }), [sheets, selectedSheet, selectedSheetName]);
 
   const resultsBySection = useMemo(() => ({
+    c2: sheetsBySection.c2 ? resultsBySheet[sheetsBySection.c2.name] ?? {} : {},
     c3: sheetsBySection.c3 ? resultsBySheet[sheetsBySection.c3.name] ?? {} : {},
     c4: sheetsBySection.c4 ? resultsBySheet[sheetsBySection.c4.name] ?? {} : {},
     c5: sheetsBySection.c5 ? resultsBySheet[sheetsBySection.c5.name] ?? {} : {},
@@ -166,6 +172,8 @@ const Index = () => {
             referenceUploadId={referenceUploadId} onReferenceUploadIdChange={setReferenceUploadId}
             onIndicatorLoadStageChange={setIndicatorLoadStage} onSheetsChange={setSheets}
             onSelectedSheetNameChange={setSelectedSheetName} onResultsChange={handleResultsChange}
+            activeSource={activeSource} hasStandard={hasStandard} hasSiaps={hasSiaps}
+            onToggleSource={handleToggleSource}
           />
         );
       case "painel":
@@ -176,6 +184,8 @@ const Index = () => {
             sheetsBySection={sheetsBySection}
           />
         );
+      case "bi-indicadores":
+        return <BiIndicadoresSection />;
       case "c2-desenvolvimento-infantil":
         return (
           <C1DevelopmentSection 
@@ -253,6 +263,8 @@ const Index = () => {
           <div className="space-y-4">
             <GeneralNominalListSection 
               sheetsBySection={sheetsBySection}
+              resultsBySection={resultsBySection}
+              referenceUploadId={referenceUploadId}
               onNavigateToSection={(section, patientName) => handleSectionChange(section as any, patientName)} 
             />
           </div>

@@ -1,4 +1,4 @@
-import { Baby, BarChart3, Building2, ClipboardList, FileDown, Heart, LayoutDashboard, Link2, Settings, ShieldCheck, Upload, UserRound, UserCog, LucideIcon } from "lucide-react";
+import { Baby, BarChart3, Building2, ClipboardList, FileDown, Heart, LayoutDashboard, Link2, Settings, ShieldCheck, Upload, UserRound, UserCog, LucideIcon, PieChart } from "lucide-react";
 
 export type SectionKey = 
   | "conexao" 
@@ -15,7 +15,8 @@ export type SectionKey =
   | "auditoria" 
   | "cadastro-municipal" 
   | "perfis" 
-  | "gestao-usuarios";
+  | "gestao-usuarios"
+  | "bi-indicadores";
 
 export type MenuItem = {
   label: string;
@@ -35,6 +36,7 @@ export const menuItems: MenuItem[] = [
   { label: "Upload", icon: Upload, section: "upload" },
   { label: "Lista Geral", icon: UserRound, section: "lista-geral" },
   { label: "Painel de Indicadores", icon: BarChart3, section: "painel" },
+  { label: "BI de Indicadores", icon: PieChart, section: "bi-indicadores" },
   { label: "C2 - Desenv. Infantil", icon: Baby, section: "c2-desenvolvimento-infantil" },
   { label: "C3 - Gestantes e Puérperas", icon: Heart, section: "c3-gestantes-puerperas" },
   { label: "C4 - Pessoa com Diabetes", icon: ShieldCheck, section: "c4-pessoas-diabetes" },
@@ -58,6 +60,11 @@ export const sectionTitles: Record<SectionKey, SectionHeaderContent> = {
     eyebrow: "Visão Geral",
     title: "Painel de Indicadores",
     description: "Visão consolidada do desempenho (0-100 pontos) entre os indicadores C2 a C7, com cruzamento nominal e monitoramento de metas oficiais.",
+  },
+  "bi-indicadores": {
+    eyebrow: "Análise Avançada",
+    title: "BI de Indicadores",
+    description: "Análise gráfica e consolidação gerencial dos dados mapeados pela plataforma em todas as equipes e unidades.",
   },
   upload: {
     eyebrow: "Upload",
@@ -152,6 +159,8 @@ export const getSectionFromHash = (hash: string): SectionKey => {
     "cadastro-municipal": "cadastro-municipal",
     perfis: "perfis",
     "gestao-usuarios": "gestao-usuarios",
+    "bi-indicadores": "bi-indicadores",
+    bi: "bi-indicadores",
   };
   return map[normalizedHash] || "painel";
 };

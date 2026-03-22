@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Minus, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Minus, Plus, UserMinus } from "lucide-react";
 
 import { AnthropometrySummary } from "@/components/AnthropometrySummary";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -58,6 +58,18 @@ export const C2NominalListSection = ({ selectedSheet, results, referenceUploadId
   });
 
   const [expandedPatientKey, setExpandedPatientKey] = useState<string | null>(null);
+  const [showIncomplete, setShowIncomplete] = useState(false);
+
+  const incompleteCount = useMemo(
+    () => indicatorPatients.filter((p) => p.isIncomplete).length,
+    [indicatorPatients]
+  );
+
+  const filteredPatients = useMemo(() => {
+    return indicatorPatients.filter((patient) => {
+      return showIncomplete ? patient.isIncomplete : !patient.isIncomplete;
+    });
+  }, [indicatorPatients, showIncomplete]);
 
   if (!selectedSheet) {
     if (isPreparingData) {
@@ -98,9 +110,47 @@ export const C2NominalListSection = ({ selectedSheet, results, referenceUploadId
       </Card>
     );
   }
+  const EmptyCard = () => (
+    <Card className="overflow-hidden border-border/80 bg-card/90 shadow-sm">
+      <CardContent className="px-6 py-12 text-center text-sm text-muted-foreground">
+        {showIncomplete
+          ? "Nenhum cadastro incompleto encontrado nesta aba."
+          : "Nenhum paciente com cadastro completo encontrado nesta aba."}
+      </CardContent>
+    </Card>
+  );
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-lg font-bold tracking-tight text-foreground">Lista Nominal Detalhada</h2>
+          <p className="text-sm text-muted-foreground">Visualização completa de todos os critérios do indicador para cada paciente.</p>
+        </div>
+
+        {incompleteCount > 0 && (
+          <Button
+            type="button"
+            variant={showIncomplete ? "destructive" : "outline"}
+            size="sm"
+            className={cn(
+              "h-10 rounded-2xl px-4 text-xs font-bold transition-all",
+              showIncomplete ? "shadow-md shadow-destructive/20" : "hover:bg-destructive/5 hover:text-destructive hover:border-destructive/30"
+            )}
+            onClick={() => setShowIncomplete(!showIncomplete)}
+          >
+            <UserMinus className="mr-2 h-4 w-4" />
+            {showIncomplete ? "Ocultar Incompletos" : "Visualizar Cadastrados Incompletos"}
+            <Badge
+              variant={showIncomplete ? "secondary" : "destructive"}
+              className="ml-2 rounded-lg px-1.5 py-0 text-[10px]"
+            >
+              {incompleteCount}
+            </Badge>
+          </Button>
+        )}
+      </div>
+
       {isLoading ? (
         <LoadingProgressCard
           title="Carregando lista nominal"
@@ -116,9 +166,9 @@ export const C2NominalListSection = ({ selectedSheet, results, referenceUploadId
         </Alert>
       ) : null}
 
-      {indicatorPatients.length > 0 ? (
+      {filteredPatients.length > 0 ? (
         <div className="space-y-4">
-          {indicatorPatients.map((patient) => {
+          {filteredPatients.map((patient) => {
             const patientKey = `${patient.index}-${patient.cpf || patient.cns || patient.nome}`;
             const isExpanded = expandedPatientKey === patientKey;
 
@@ -232,11 +282,7 @@ export const C2NominalListSection = ({ selectedSheet, results, referenceUploadId
           })}
         </div>
       ) : !isLoading && !error ? (
-        <Card className="overflow-hidden border-border/80 bg-card/90 shadow-sm">
-          <CardContent className="px-6 py-12 text-center text-sm text-muted-foreground">
-            Nenhum paciente foi encontrado para montar a lista nominal.
-          </CardContent>
-        </Card>
+        <EmptyCard />
       ) : null}
     </div>
   );

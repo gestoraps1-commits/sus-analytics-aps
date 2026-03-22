@@ -15,25 +15,43 @@ type EdgeEnvelope<T> = T & {
   error?: string;
 };
 
-const invokeStorage = async <T,>(body: Record<string, unknown>) => {
-  const { data, error } = await supabase.functions.invoke("reference-storage", { body });
+const invokeStorage = async <T>(payload: any): Promise<T> => {
+  const { data, error } = await supabase.functions.invoke("reference-storage", {
+    body: payload,
+  });
 
   if (error) {
+    console.error("🔥 EDGE FUNCTION FATAL ERROR:", error);
+    if ('context' in error) {
+      try {
+        const body = await (error as any).context.clone().json();
+        console.error("🔥 EDGE FUNCTION RAW RESPONSE:", body);
+      } catch (e) {
+        console.error("🔥 EDGE FUNCTION BODY UNPARSABLE");
+      }
+    }
     throw new Error(error.message || "Falha ao acessar o armazenamento da plataforma.");
   }
 
+  // The `data` object returned by the edge function is an EdgeEnvelope<T>
   const response = data as EdgeEnvelope<T>;
 
   if (!response.success) {
-    throw new Error(response.error || "Falha ao acessar o armazenamento da plataforma.");
+    throw new Error(response.error || "Operação falhou no servidor.");
   }
 
-  return response;
+  // If successful, we return the inner T type, which is part of the EdgeEnvelope
+  return response as T;
 };
 
 export const loadPersistedUpload = async () => {
-  const response = await invokeStorage<{ upload: LoadedReferenceUpload | null }>({ action: "load_active_upload" });
-  return response.upload;
+  const response = await invokeStorage<{
+    upload: LoadedReferenceUpload | null;
+    activeSource: "standard" | "siaps";
+    hasStandard: boolean;
+    hasSiaps: boolean;
+  }>({ action: "load_active_upload" });
+  return response;
 };
 
 export const replacePersistedUpload = async (payload: {
@@ -41,6 +59,7 @@ export const replacePersistedUpload = async (payload: {
   originalFileName: string;
   selectedSheetName: string;
   sheets: ParsedSheet[];
+  sourceType?: "standard" | "siaps";
 }) => {
   const response = await invokeStorage<{ uploadId: string }>({
     action: "replace_active_upload",
@@ -48,6 +67,14 @@ export const replacePersistedUpload = async (payload: {
   });
 
   return response.uploadId;
+};
+
+export const setActiveSource = async (sourceType: "standard" | "siaps") => {
+  const response = await invokeStorage<{ activeId: string }>({
+    action: "set_active_source",
+    sourceType,
+  });
+  return response.activeId;
 };
 
 export const updatePersistedSheetResults = async (payload: {

@@ -60,6 +60,7 @@ const initialFilters: C1Filters = {
   procedure: "all",
   classification: "all",
   search: "",
+  showIncomplete: false,
 };
 
 const formatDate = (value: string) => {
@@ -111,6 +112,11 @@ export const C3GestationSection = ({
     [indicatorPatients],
   );
 
+  const incompleteCount = useMemo(
+    () => indicatorPatients.filter((p) => p.isIncomplete).length,
+    [indicatorPatients]
+  );
+
   const filteredPatients = useMemo(() => {
     const query = normalizeSearchText(filters.search);
 
@@ -130,12 +136,14 @@ export const C3GestationSection = ({
         (filters.status === "eligible" && patient.totalPoints >= 0) ||
         (filters.status === "pending" && patient.pendingFlags > 0) ||
         (filters.status === "tracking" && patient.trackingFlags > 0) ||
-        (filters.status === "done" && patient.pendingFlags === 0 && patient.trackingFlags === 0) ||
-        (filters.status === "lost" && (patient.pendingFlags >= 4 || patient.totalPoints <= 25));
+          (filters.status === "done" && patient.pendingFlags === 0 && patient.trackingFlags === 0) ||
+          (filters.status === "lost" && (patient.pendingFlags >= 4 || patient.totalPoints <= 25));
 
-      return searchMatches && unitMatches && procedureMatches && classificationMatches && statusMatches;
-    });
-  }, [filters, indicatorPatients]);
+        const incompleteMatches = filters.showIncomplete ? patient.isIncomplete : !patient.isIncomplete;
+
+        return searchMatches && unitMatches && procedureMatches && classificationMatches && statusMatches && incompleteMatches;
+      });
+    }, [filters, indicatorPatients]);
 
   const dashboard = useMemo(() => {
     const total = filteredPatients.length;
@@ -253,6 +261,7 @@ export const C3GestationSection = ({
         procedureOptions={procedureOptions}
         classificationOptions={Object.entries(classificationLabel).map(([value, label]) => ({ value, label }))}
         onChange={handleFilterChange}
+        incompleteCount={incompleteCount}
       />
 
       {filteredPatients.length > 0 ? (

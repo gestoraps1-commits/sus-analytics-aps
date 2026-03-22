@@ -56,6 +56,7 @@ const initialFilters: C1Filters = {
   procedure: "all",
   classification: "all",
   search: "",
+  showIncomplete: false,
 };
 
 const formatDate = (value: string) => {
@@ -107,6 +108,11 @@ export const C1DevelopmentSection = ({
       ),
     [indicatorPatients],
   );
+  
+  const incompleteCount = useMemo(
+    () => indicatorPatients.filter((p) => p.isIncomplete).length,
+    [indicatorPatients]
+  );
 
   const filteredPatients = useMemo(() => {
     const query = normalizeSearchText(filters.search);
@@ -131,7 +137,9 @@ export const C1DevelopmentSection = ({
         (filters.status === "done" && patient.pendingFlags === 0 && patient.trackingFlags === 0) ||
         (filters.status === "lost" && (patient.pendingFlags >= 3 || patient.totalPoints <= 20));
 
-      return searchMatches && unitMatches && procedureMatches && classificationMatches && statusMatches;
+      const incompleteMatches = filters.showIncomplete ? patient.isIncomplete : !patient.isIncomplete;
+
+      return searchMatches && unitMatches && procedureMatches && classificationMatches && statusMatches && incompleteMatches;
     });
   }, [filters, indicatorPatients]);
 
@@ -266,6 +274,7 @@ export const C1DevelopmentSection = ({
         procedureOptions={procedureOptions}
         classificationOptions={Object.entries(classificationLabel).map(([value, label]) => ({ value, label }))}
         onChange={handleFilterChange}
+        incompleteCount={incompleteCount}
       />
 
       {filteredPatients.length > 0 ? (

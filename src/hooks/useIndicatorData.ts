@@ -42,7 +42,8 @@ const buildReferenceRows = (sheet: ParsedSheet) =>
       cpf: getValue(row, ["CPF", "NU_CPF_CIDADAO"]),
       cns: getValue(row, ["CNS", "NU_CNS", "NU_CNS_CIDADAO"]),
       nome: getValue(row, ["NOME", "NO_CIDADAO", "PROFISSIONAL", "NO_PROFISSIONAL"]),
-      nascimento: getValue(row, ["DN", "DATA NASCIMENTO", "DT_NASCIMENTO", "DT NASCIMENTO"]),
+      nascimento: getValue(row, ["DN", "DATA NASCIMENTO", "DT_NASCIMENTO", "DT NASCIMENTO", "Nascimento"]),
+      sexo: getValue(row, ["SEXO", "NO_SEXO", "Sexo"]),
       profissional: getValue(row, ["PROFISSIONAL", "NO_PROFISSIONAL"]),
       unidade: getValue(row, ["UNIDADE", "NO_UNIDADE_SAUDE"]),
       acs: getValue(row, ["ACS"]),
@@ -75,7 +76,8 @@ async function resolveSearchResults(
 
   indicatorProgressTracker.update(sectionKey, 10);
 
-  // Try IndexedDB cache for search results
+  // Bypass cache for debugging enrichment
+  /*
   if (referenceUploadId) {
     const cacheKey = searchCacheKey(sheet.name, referenceUploadId);
     const cached = await idbGet<Record<number, SearchResult>>(cacheKey);
@@ -84,6 +86,7 @@ async function resolveSearchResults(
       return cached.data;
     }
   }
+  */
 
   // Fetch from edge function
   const referenceRows = buildReferenceRows(sheet);
@@ -105,6 +108,8 @@ async function resolveSearchResults(
   const resolved = Object.fromEntries(
     searchResponse.results.map((result) => [result.index, result]),
   );
+
+  console.log("[useIndicatorData] Resolved results sample:", Object.values(resolved).slice(0, 3));
 
   indicatorProgressTracker.update(sectionKey, 30);
 
@@ -138,19 +143,27 @@ export async function fetchIndicatorData(
   const indicatorRows = buildReferenceRows(sheet)
     .map((referenceRow) => {
       const result = resolvedResults[referenceRow.index];
+      const rawSexo = (result?.backend?.sexoBase || referenceRow.sexo || "").trim().toUpperCase();
+      const mappedSexo = rawSexo === "F" ? "Feminino" : rawSexo === "M" ? "Masculino" : rawSexo;
+
       return {
         index: referenceRow.index,
-        cpf: result?.backend?.cpfBase || referenceRow.cpf,
-        cns: result?.backend?.cnsBase || referenceRow.cns,
-        nome: result?.backend?.nomeBase || referenceRow.nome,
-        nascimento: result?.backend?.nascimentoBase || referenceRow.nascimento,
-        sexo: result?.backend?.sexoBase || "",
+        cpf: referenceRow.cpf,
+        cns: referenceRow.cns,
+        nome: referenceRow.nome,
+        nascimento: referenceRow.nascimento,
+        sexo: rawSexo === "F" ? "Feminino" : rawSexo === "M" ? "Masculino" : rawSexo,
         unidade: result?.backend?.unidadeBase || referenceRow.unidade,
         equipe: result?.backend?.equipeBase || "",
+        isIncomplete: !result?.backend?.nomeBase,
         sourceRow: sheet.rows[referenceRow.index],
       };
     })
     .filter((row) => row.nome || row.cpf || row.cns);
+
+  console.log("[useIndicatorData] Search Debug:", {
+    resultsSample: Object.values(resolvedResults).slice(0, 3)
+  });
 
   if (!indicatorRows.length) {
     indicatorProgressTracker.update(sectionKey, 100);
@@ -190,8 +203,22 @@ export async function fetchIndicatorData(
       const response = data as IndicatorResponse;
       if (!response.success) throw new Error(response.error || `Falha ao calcular ${config.errorLabel}.`);
 
+      // Debug logs removed
+
       for (const p of response.patients) {
-        const extra = acsLookup.get(p.index);
+        // Force number comparison and log a sample
+        const prepRow = indicatorRows.find(ir => Number(ir.index) === Number(p.index));
+        
+        // Ensure isIncomplete is set for every patient based on the backend's name
+        p.isIncomplete = !p.nome;
+
+        if (prepRow) {
+          p.sourceRow = prepRow.sourceRow;
+        } else {
+          console.warn(`[useIndicatorData] PrepRow not found for patient index ${p.index}. Available indices:`, indicatorRows.slice(0, 5).map(ir => ir.index));
+        }
+
+        const extra = acsLookup.get(Number(p.index));
         if (extra) {
           p.acs = extra.acs;
           p.microarea = extra.microarea;

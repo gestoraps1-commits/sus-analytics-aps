@@ -63,14 +63,22 @@ export type AnthropometryRecord = {
   height: number | null;
 };
 
+export type IndicatorProcedureEvent = {
+  date: string;
+  professional: string;
+};
+
 export type IndicatorFlag = {
   key: IndicatorFlagKey;
   title: string;
   status: IndicatorFlagStatus;
   completed: boolean;
   points: number;
+  metric: string;
+  summary: string;
   detail: string;
   deadline?: IndicatorFlagDeadline | null;
+  events?: IndicatorProcedureEvent[];
 };
 
 export type IndicatorClassification = "regular" | "suficiente" | "bom" | "otimo";
@@ -92,6 +100,9 @@ export type IndicatorPatient = {
   completedFlags: number;
   pendingFlags: number;
   trackingFlags: number;
+  isIncomplete?: boolean;
+  // Support for SIAPS enrichment and debugging
+  sourceRow?: Record<string, string>;
   flags: IndicatorFlag[];
   anthropometryRecords?: AnthropometryRecord[];
 };

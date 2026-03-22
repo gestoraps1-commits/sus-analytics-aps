@@ -26,6 +26,10 @@ type UploadSectionProps = {
   onResultsChange: (results: Record<number, SearchResult>) => void;
   onReferenceUploadIdChange: (referenceUploadId: string | null) => void;
   onIndicatorLoadStageChange?: (stage: "idle" | "uploading" | "matching" | "indicator" | "ready" | "error") => void;
+  activeSource?: "standard" | "siaps";
+  hasStandard?: boolean;
+  hasSiaps?: boolean;
+  onToggleSource?: (sourceType: "standard" | "siaps") => void;
 };
 
 export const UploadSection = ({
@@ -38,6 +42,10 @@ export const UploadSection = ({
   onResultsChange,
   onReferenceUploadIdChange,
   onIndicatorLoadStageChange,
+  activeSource = "standard",
+  hasStandard = false,
+  hasSiaps = false,
+  onToggleSource,
 }: UploadSectionProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,7 +61,7 @@ export const UploadSection = ({
     [results],
   );
 
-  const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (sourceType: "standard" | "siaps") => async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -102,6 +110,7 @@ export const UploadSection = ({
         originalFileName: file.name,
         selectedSheetName: preferredSheetName,
         sheets: parsedSheets,
+        sourceType,
       });
       onReferenceUploadIdChange(uploadId);
       onIndicatorLoadStageChange?.("matching");
@@ -131,7 +140,7 @@ export const UploadSection = ({
             normalizeDigits(row.cpf) ||
             normalizeDigits(row.cns) ||
             row.nome?.trim() ||
-            normalizeDateValue(row.nascimento),
+            normalizeDateValue(row.nascimento)
         );
 
       if (!payloadRows.length) {
@@ -219,20 +228,107 @@ export const UploadSection = ({
   return (
     <Card className="overflow-hidden border-border/80 bg-card/90 shadow-sm">
       <CardContent className="space-y-5 p-5 md:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="space-y-2">
-            <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Upload</p>
-            <h3 className="text-2xl font-black tracking-tight text-foreground">Planilha de referência para busca ativa</h3>
-            <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-              Faça upload do Excel e o sistema exibirá somente as linhas da planilha com o retorno correspondente encontrado na base remota.
-            </p>
+        <div className="space-y-2 mb-6">
+          <p className="text-sm uppercase tracking-[0.2em] text-muted-foreground">Upload & Gestão de Fontes</p>
+          <h3 className="text-2xl font-black tracking-tight text-foreground">Bases de Referência para Busca Ativa</h3>
+          <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            Faça upload do Excel (e-SUS/PEC ou SIAPS) e ative a fonte desejada.
+            Apenas os dados da fonte ativa estarão disponíveis em todo o sistema.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
+          {/* Standard */}
+          <div className={`relative p-8 rounded-[2rem] border-2 transition-all duration-300 flex flex-col justify-between ${
+            activeSource === 'standard' 
+              ? 'border-primary bg-primary/5 shadow-md shadow-primary/10' 
+              : 'border-border bg-background/50 hover:border-primary/30'
+          }`}>
+            <div className="flex flex-col mb-4">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h4 className={`font-black tracking-tight text-xl ${activeSource === 'standard' ? 'text-primary' : 'text-foreground'}`}>
+                    Fonte Padrão
+                  </h4>
+                  <p className="text-sm font-medium text-muted-foreground mt-1">Integração e-SUS PEC</p>
+                </div>
+                {activeSource === 'standard' ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs uppercase bg-primary text-primary-foreground rounded-full shadow-sm">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-40"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                    </span>
+                    Base Ativa
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onToggleSource?.('standard')}
+                    className="px-4 py-1.5 font-bold text-xs uppercase bg-accent text-accent-foreground rounded-full hover:bg-primary hover:text-primary-foreground transition-all shadow-sm"
+                  >
+                    Ativar Fonte Padrão
+                  </button>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Utiliza planilhas convencionais originadas do PEC ou exportações e-SUS contendo colunas detalhadas de Numerador e Denominador. Requer cruzamento avançado por regras.
+              </p>
+            </div>
+            
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <label className="inline-flex w-full cursor-pointer justify-center items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition bg-background shadow-sm border border-border hover:bg-accent hover:text-accent-foreground text-foreground">
+                <Upload className="h-4 w-4" />
+                Substituir Base Padrão
+                <input type="file" accept=".xlsx,.xls" className="hidden" onClick={(e) => (e.target as HTMLInputElement).value = ""} onChange={handleFileChange('standard')} />
+              </label>
+            </div>
           </div>
 
-          <label className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-accent px-5 py-3 text-sm font-semibold text-accent-foreground shadow-lg shadow-accent/20 transition hover:opacity-90">
-            <Upload className="h-4 w-4" />
-            Enviar planilha
-            <input type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFileChange} />
-          </label>
+          {/* SIAPS */}
+          <div className={`relative p-8 rounded-[2rem] border-2 transition-all duration-300 flex flex-col justify-between ${
+            activeSource === 'siaps' 
+              ? 'border-[#ff7a45] bg-[#ff7a45]/5 shadow-md shadow-[#ff7a45]/10' 
+              : 'border-border bg-background/50 hover:border-[#ff7a45]/30'
+          }`}>
+            <div className="flex flex-col mb-4">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h4 className={`font-black tracking-tight text-xl ${activeSource === 'siaps' ? 'text-[#ff7a45]' : 'text-foreground'}`}>
+                    Fonte SIAPS
+                  </h4>
+                  <p className="text-sm font-medium text-muted-foreground mt-1">Central de Indicadores</p>
+                </div>
+                {activeSource === 'siaps' ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 font-bold text-xs uppercase bg-[#ff7a45] text-white rounded-full shadow-sm">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-40"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-white"></span>
+                    </span>
+                    Base Ativa
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onToggleSource?.('siaps')}
+                    className="px-4 py-1.5 font-bold text-xs uppercase bg-accent text-accent-foreground rounded-full hover:bg-[#ff7a45] hover:text-white transition-all shadow-sm"
+                  >
+                    Ativar Fonte SIAPS
+                  </button>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Utiliza a base centralizada do SIAPS. Faz cruzamento dinâmico na base remota para identificação de pacientes e profissionais.
+              </p>
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-border/50">
+              <label className="inline-flex w-full cursor-pointer justify-center items-center gap-2 rounded-xl px-4 py-3 text-sm font-bold transition bg-background shadow-sm border border-border hover:bg-accent hover:text-accent-foreground text-foreground">
+                <Upload className="h-4 w-4" />
+                Substituir Base SIAPS
+                <input type="file" accept=".xlsx,.xls" className="hidden" onClick={(e) => (e.target as HTMLInputElement).value = ""} onChange={handleFileChange('siaps')} />
+              </label>
+            </div>
+          </div>
         </div>
 
         {sheets.length > 0 ? (
@@ -323,8 +419,8 @@ export const UploadSection = ({
                             </td>
                           ))}
                           <td className="border-b border-border/70 px-4 py-3 align-top">
-                            <span className={result?.found ? "font-semibold text-foreground" : "text-muted-foreground"}>
-                              {result?.found ? "Encontrado" : "Não encontrado"}
+                            <span className={result?.found ? "font-semibold text-foreground" : activeSource === 'siaps' ? "font-semibold text-destructive" : "text-muted-foreground"}>
+                              {result?.found ? "Encontrado" : activeSource === 'siaps' ? "Paciente não identificado na base de dados" : "Não encontrado"}
                             </span>
                           </td>
                           <td className="border-b border-border/70 px-4 py-3 align-top text-foreground">{result?.backend?.nomeBase || result?.backend?.profissionalBase || "-"}</td>
