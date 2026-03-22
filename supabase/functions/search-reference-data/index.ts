@@ -293,6 +293,7 @@ Deno.serve(async (req) => {
       }
     }
 
+
     const mappedResults = rows.map((row) => {
       const cpf = normalizeDigits(row.cpf);
       const cns = normalizeDigits(row.cns);
@@ -305,7 +306,7 @@ Deno.serve(async (req) => {
       const byNome = nome ? getUnique(nomeMap.get(nome)) : null;
       const byNascimento = nascimento ? getUnique(nascimentoMap.get(nascimento)) : null;
 
-      const backend = byCpf ?? byCns ?? byNomeData ?? byNome ?? byNascimento ?? null;
+      const backendOriginal = byCpf ?? byCns ?? byNomeData ?? byNome ?? byNascimento ?? null;
       const source: SearchSource = byCpf
         ? "cpf"
         : byCns
@@ -320,9 +321,9 @@ Deno.serve(async (req) => {
 
       return {
         index: row.index,
-        found: Boolean(backend),
+        found: Boolean(backendOriginal),
         source,
-        backend,
+        backend: backendOriginal,
       };
     });
 

@@ -342,17 +342,37 @@ const loadStoredUpload = async (
 };
 
 const loadActiveUpload = async (serviceClient: ReturnType<typeof createServiceClient>) => {
-  const { data: upload, error: uploadError } = await serviceClient
+  // Determine if there are any standard or siaps uploads available
+  const { data: metricsData } = await serviceClient
     .from("reference_uploads")
-    .select("id, name, original_file_name, metadata")
+    .select("id, metadata, is_active")
     .eq("owner_user_id", SYSTEM_OWNER_ID)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: false });
 
-  if (uploadError) throw uploadError;
-  return loadStoredUpload(serviceClient, upload as ReferenceUploadRecord | null);
+  let hasStandard = false;
+  let hasSiaps = false;
+  let activeSource: "standard" | "siaps" = "standard";
+  let activeUploadRecord: ReferenceUploadRecord | null = null;
+
+  for (const record of metricsData ?? []) {
+    const sourceType = String((record.metadata as Record<string, unknown>)?.sourceType ?? "standard");
+    if (sourceType === "siaps") hasSiaps = true;
+    if (sourceType === "standard") hasStandard = true;
+
+    if (record.is_active && !activeUploadRecord) {
+      activeUploadRecord = record as unknown as ReferenceUploadRecord;
+      activeSource = sourceType as "standard" | "siaps";
+    }
+  }
+
+  const uploadPayload = await loadStoredUpload(serviceClient, activeUploadRecord);
+
+  return {
+    upload: uploadPayload,
+    activeSource,
+    hasStandard,
+    hasSiaps,
+  };
 };
 
 const loadUploadByReferenceId = async (serviceClient: ReturnType<typeof createServiceClient>, referenceUploadId: string) => {
@@ -380,6 +400,16 @@ const ensureIndicatorUpload = async (
 
   if (existingError) throw existingError;
 
+  const nowIso = new Date().toISOString();
+  const { error: deactivateError } = await serviceClient
+    .from("indicator_uploads")
+    .update({ is_active: false, replaced_at: nowIso })
+    .eq("owner_user_id", SYSTEM_OWNER_ID)
+    .eq("indicator_code", indicatorCode)
+    .eq("is_active", true);
+
+  if (deactivateError) throw deactivateError;
+
   if (existing?.id) {
     const { error: updateError } = await serviceClient
       .from("indicator_uploads")
@@ -394,16 +424,6 @@ const ensureIndicatorUpload = async (
     if (updateError) throw updateError;
     return existing.id as string;
   }
-
-  const nowIso = new Date().toISOString();
-  const { error: deactivateError } = await serviceClient
-    .from("indicator_uploads")
-    .update({ is_active: false, replaced_at: nowIso })
-    .eq("owner_user_id", SYSTEM_OWNER_ID)
-    .eq("indicator_code", indicatorCode)
-    .eq("is_active", true);
-
-  if (deactivateError) throw deactivateError;
 
   const { data: inserted, error: insertError } = await serviceClient
     .from("indicator_uploads")
@@ -458,9 +478,9 @@ const syncIndicatorNominalBase = async (
       const nome = String(backend.nomeBase ?? getValue(row, ["NOME", "NO_CIDADAO"]) ?? "").trim();
       const cpf = normalizeDigits(backend.cpfBase ?? getValue(row, ["CPF", "NU_CPF_CIDADAO"]));
       const cns = normalizeDigits(backend.cnsBase ?? getValue(row, ["CNS", "NU_CNS", "NU_CNS_CIDADAO"]));
-      const sexo = String(backend.sexoBase ?? getValue(row, ["SEXO", "NO_SEXO"]) ?? "").trim();
+      const sexo = String(backend.sexoBase ?? getValue(row, ["SEXO", "NO_SEXO", "Sexo"]) ?? "").trim();
       const acs = String(getValue(row, ["ACS", "NO_ACS", "AGENTE", "AGENTE COMUNITARIO", "AGENTE COMUNITARIO DE SAUDE"]) ?? "").trim();
-      const nascimento = normalizeDateValue(backend.nascimentoBase ?? getValue(row, ["DN", "DATA NASCIMENTO", "DT_NASCIMENTO", "DT NASCIMENTO"])) || null;
+      const nascimento = normalizeDateValue(backend.nascimentoBase ?? getValue(row, ["DN", "DATA NASCIMENTO", "DT_NASCIMENTO", "DT NASCIMENTO", "Nascimento"])) || null;
 
       return {
         indicator_code: indicatorCode,
@@ -847,6 +867,7 @@ Deno.serve(async (req) => {
       const selectedSheetName = String(body?.selectedSheetName ?? sheets[0]?.name ?? "");
       const name = String(body?.name ?? "Planilha de referência");
       const originalFileName = String(body?.originalFileName ?? name);
+      const sourceType = String(body?.sourceType ?? "standard");
 
       const uploadMode = sheets.find((sheet) => sheet.mode === "citizen")?.mode ?? sheets[0]?.mode ?? "citizen";
       const nowIso = new Date().toISOString();
@@ -869,6 +890,7 @@ Deno.serve(async (req) => {
           is_active: true,
           metadata: {
             selectedSheetName,
+            sourceType,
           },
         })
         .select("id")
@@ -936,6 +958,71 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ success: true, uploadId: referenceUploadId }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "set_active_source") {
+      const sourceType = String(body?.sourceType ?? "standard");
+      
+      const { data: allUploads } = await serviceClient
+        .from("reference_uploads")
+        .select("id, metadata")
+        .eq("owner_user_id", SYSTEM_OWNER_ID)
+        .order("created_at", { ascending: false });
+
+      let targetId: string | null = null;
+      for (const record of allUploads ?? []) {
+        const st = String((record.metadata as Record<string, unknown>)?.sourceType ?? "standard");
+        if (st === sourceType) {
+          targetId = record.id;
+          break;
+        }
+      }
+
+      if (!targetId) {
+        throw new Error(`Nenhum upload com a fonte '${sourceType}' foi encontrado.`);
+      }
+
+      const nowIso = new Date().toISOString();
+
+      const { error: deactivateError } = await serviceClient
+        .from("reference_uploads")
+        .update({ is_active: false, replaced_at: nowIso })
+        .eq("owner_user_id", SYSTEM_OWNER_ID)
+        .eq("is_active", true);
+
+      if (deactivateError) throw deactivateError;
+
+      const { error: activateError } = await serviceClient
+        .from("reference_uploads")
+        .update({ is_active: true, replaced_at: null })
+        .eq("id", targetId);
+
+      if (activateError) throw activateError;
+
+      const syncReplaceWork = (async () => {
+        try {
+          const bgClient = createServiceClient();
+          await Promise.all([
+            ensureStoredIndicatorStructure(bgClient, C2_INDICATOR_CODE, targetId),
+            ensureStoredIndicatorStructure(bgClient, C3_INDICATOR_CODE, targetId),
+          ]);
+        } catch (err) {
+          console.error("[reference-storage] Background sync (set active) error:", err);
+        }
+      })();
+
+      // @ts-ignore
+      if (typeof EdgeRuntime !== "undefined" && EdgeRuntime.waitUntil) {
+        // @ts-ignore
+        EdgeRuntime.waitUntil(syncReplaceWork);
+      } else {
+        await syncReplaceWork;
+      }
+
+      return new Response(JSON.stringify({ success: true, activeId: targetId }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
